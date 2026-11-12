@@ -7,7 +7,7 @@ function pickAt(cx,cy,opts={}){ray.setFromCamera(ndc(cx,cy),activeCam());
  const kinds=opts.kinds||['node','rod','plane'];
  if(kinds.includes('node'))list=list.concat(pickNodes.filter(p=>{const id=p.userData.id;return!M.hidden.has('n'+id)&&(mode!=='plan'||cn.has(id))}));
  if(kinds.includes('rod'))list=list.concat(pickRods.filter(p=>{const id=p.userData.id;return!M.hidden.has('r'+id)&&(mode!=='plan'||cr.has(id))}));
- if(kinds.includes('plane')&&mode==='3d')list=list.concat(pickPlanes);
+ if(kinds.includes('plane')&&mode==='3d')list=list.concat(pickPlanes.filter(p=>!M.hidden.has('p'+p.userData.id)));
  const hits=ray.intersectObjects(list,false);
  if(!hits.length)return null;const h=hits[0];return{kind:h.object.userData.kind,id:h.object.userData.id,point:h.point}}
 function raySegT(a,b){ray.setFromCamera; const u=ray.ray.direction,v=b.clone().sub(a),w=ray.ray.origin.clone().sub(a);

@@ -46,7 +46,7 @@ function bindPointer(){const cv=renderer.domElement;
   else if(h.kind==='node'){selectOnly('node',h.id);zoomToSelection()}});
  cv.addEventListener('pointerleave',e=>{touches.delete(e.pointerId);if(!ptr.down){$('#badge').style.display='none';hover={kind:null,id:null};applySelMats();clearGhost()}})}
 function beginDrag(e){if(ptr.btn===1){ptr.mode='pan';return}
- if(ptr.btn===2){ptr.mode=mode==='plan'?'pan':'orbit';return}
+ if(ptr.btn===2){ptr.mode=(mode==='plan'||e.ctrlKey||e.metaKey)?'pan':'orbit';return}
  if(paste){ptr.mode=mode==='plan'?'pan':'orbit';return}
  if(tool==='select'&&ptr.hit&&ptr.hit.kind==='node'){ptr.mode='node';draggingNode=ptr.hit.id;tx=serialize();return}
  if(tool==='select'){ptr.mode='marquee';return}

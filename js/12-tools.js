@@ -7,7 +7,7 @@ function setTool(t){if(mode==='plan'){const bad={xy:['column','post','plane'],ro
  $$('#toolbar .tool').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
  renderer.domElement.style.cursor=t==='select'?'default':'crosshair';
  renderProps();updateHint()}
-function updateHint(){const h={select:'Клик — выделить • Ctrl+клик — добавить • рамка — область • перетащите узел — переместить • ПКМ — меню • СКМ — панорама • ПКМ+тяга — орбита',
+function updateHint(){const h={select:'Клик — выделить • Ctrl+клик — добавить • рамка — область • перетащите узел — переместить • ПКМ — меню • Ctrl+ПКМ+тяга — панорама • ПКМ+тяга — орбита • скрытое не выделяется',
  support:'Клик — опора • привязки: сетка, узлы, ⟂/∥ • точные координаты и ряды — на панели справа',
  node:planCtx.kind==='rod'&&mode==='plan'?'Клик по оси — узел • привязка к долям L и шагу сетки • точное расстояние — справа':'Клик — узел (сетка / ось стержня)',
  column:`Клик по узлу — столб ⊥ XY высотой ${fmt(params.colH)} мм (меняется справа)`,
