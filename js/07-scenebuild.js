@@ -56,6 +56,7 @@ function buildPlaneObjects(){
   const border=lines([c0,c1,c1,c2,c2,c3,c3,c0],0x6fd3ff,inCtx?.9:.4);
   const lbl=labelSprite(p.name,{border:'#2c7ea8',color:'#a8e4ff',worldH:400});lbl.position.copy(c3).addScaledVector(b.v,300);lbl.userData.autoScale=true;
   const g=new THREE.Group();g.add(quad,border,lbl);g.userData={kind:'plane',id:p.id};
+  if(M.hidden.has('p'+p.id))g.visible=false;
   gPlanes.add(g);planeObjs.set(p.id,{g,quad,border,lbl});pickPlanes.push(quad)}}
 function rebuildScene(){clearGroup(gNodes);clearGroup(gRods);clearGroup(gPlanes);
  nodeObjs.clear();rodObjs.clear();planeObjs.clear();pickNodes=[];pickRods=[];pickPlanes=[];

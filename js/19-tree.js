@@ -1,13 +1,17 @@
 /* ==================== TREE: model tree panel render + interactions ==================== */
 'use strict';
 /* ---- row builders ---- */
-function treeEyeBtn(k,id){return `<button class="eye" data-eye="${k}${id}"><i>${M.hidden.has(k+id)?ICONS.eyeoff:ICONS.eye}</i></button>`}
-function treeItemRow(k,id,color,nm,sub){const hid=M.hidden.has(k+id);const s=sel[k+'s'].has(id);
+const HID_PREFIX={node:'n',rod:'r',plane:'p',meas:'m'};
+function hiddenKey(k,id){return (HID_PREFIX[k]||k[0])+id}
+function treeEyeBtn(k,id){const key=hiddenKey(k,id);return `<button class="eye" data-eye="${key}" data-tip="${M.hidden.has(key)?'Показать':'Скрыть'}"><i>${M.hidden.has(key)?ICONS.eyeoff:ICONS.eye}</i></button>`}
+function treeItemRow(k,id,color,nm,sub){const hid=M.hidden.has(hiddenKey(k,id));const s=sel[k+'s'].has(id);
  return`<div class="titem${s?' sel':''}${hid?' hid':''}" data-el="${k}:${id}"><span class="dot" style="background:${color};color:${color}"></span><span class="nm">${esc(nm)}</span><span class="sub">${esc(sub)}</span>${treeEyeBtn(k,id)}</div>`}
-function treeSection(title,cnt,inner,open=true){return cnt?`<details class="tsec"${open?' open':''}><summary>${title}<span class="cnt">${cnt}</span></summary>${inner}</details>`:''}
-function treePlaneRow(p){return `<div class="titem${sel.planes.has(p.id)?' sel':''}" data-el="plane:${p.id}"><span class="dot" style="background:#6fd3ff;color:#6fd3ff"></span><span class="nm">${esc(p.name)}</span><span class="sub">3 узла</span><button class="eye" data-open-plane="${p.id}"><i>${ICONS.edit}</i></button></div>`}
+const treeSecOpen={};
+function treeSection(title,cnt,inner,open=true){const on=(title in treeSecOpen)?treeSecOpen[title]:open;
+ return cnt?`<details class="tsec"${on?' open':''}><summary>${title}<span class="cnt">${cnt}</span></summary>${inner}</details>`:''}
+function treePlaneRow(p){return `<div class="titem${sel.planes.has(p.id)?' sel':''}${M.hidden.has(hiddenKey('plane',p.id))?' hid':''}" data-el="plane:${p.id}"><span class="dot" style="background:#6fd3ff;color:#6fd3ff"></span><span class="nm">${esc(p.name)}</span><span class="sub">3 узла</span><button class="eye" data-open-plane="${p.id}"><i>${ICONS.edit}</i></button>${treeEyeBtn('plane',p.id)}</div>`}
 function treeGroupRow(g){return `<div class="titem" data-group="${g.id}"><span class="dot" style="background:#ffb020;color:#ffb020"></span><span class="nm">${esc(g.name)}</span><span class="sub">${g.nodes.length} узл • ${g.rods.length} ст</span><button class="eye" data-ungroup="${g.id}"><i>${ICONS.close}</i></button></div>`}
-function treeMeasureRow(m,i){return `<div class="titem" data-meas="${i}"><span class="dot" style="background:#ffc53d;color:#ffc53d"></span><span class="nm">Размер ${i+1}</span><span class="sub">${fmt(m.a.distanceTo(m.b))} мм</span></div>`}
+function treeMeasureRow(m,i){return `<div class="titem${M.hidden.has(hiddenKey('meas',i))?' hid':''}" data-meas="${i}"><span class="dot" style="background:#ffc53d;color:#ffc53d"></span><span class="nm">Размер ${i+1}</span><span class="sub">${fmt(m.a.distanceTo(m.b))} мм</span>${treeEyeBtn('meas',i)}</div>`}
 function renderTree(){const q=($('#treeSearch').value||'').toLowerCase();const list=$('#treeList');
  const match=s=>!q||s.toLowerCase().includes(q);
  const sup=nodeArr().filter(n=>n.type==='support'&&match(n.name));
@@ -32,4 +36,5 @@ $('#paneTree').addEventListener('click',e=>{const eye=e.target.closest('[data-ey
   if(e.ctrlKey)sel[k+'s'].has(+id)?sel[k+'s'].delete(+id):sel[k+'s'].add(+id);else selectOnly(k,+id);selectionChanged()}});
 $('#paneTree').addEventListener('dblclick',e=>{const it=e.target.closest('[data-el]');if(it){const[k,id]=it.dataset.el.split(':');selectOnly(k,+id);zoomToSelection()}});
 $('#treeSearch').addEventListener('input',renderTree);$('#treeSort').addEventListener('change',renderTree);
+$('#paneTree').addEventListener('toggle',e=>{const d=e.target;if(d&&d.matches&&d.matches('details.tsec')){const s=d.querySelector('summary');treeSecOpen[s.childNodes[0].textContent]=d.open}},true);
 $('#btnShowAll').onclick=showAll;$('#btnOrphans').onclick=clearOrphans;

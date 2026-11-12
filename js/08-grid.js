@@ -57,7 +57,7 @@ function rebuildDims(){clearGroup(gDims);
   for(let i=0;i<ys.length-1;i++)dimLine(gDims,ys[i],ys[i+1],x-1100,'y',wH);
   if(ys.length>2)dimLine(gDims,ys[0],ys[ys.length-1],x-2100,'y',wH,0xffb020)})}
 function buildMeasures(){clearGroup(gMeasure);
- M.measures.forEach(m=>{const d=m.b.clone().sub(m.a);const L=d.length();const u=d.clone().normalize();
+ M.measures.forEach((m,i)=>{if(M.hidden.has('m'+i))return;const d=m.b.clone().sub(m.a);const L=d.length();const u=d.clone().normalize();
   let perp=u.clone().cross(AZ);if(perp.length()<.1)perp=u.clone().cross(AX);perp.normalize().multiplyScalar(200);
   const pts=[m.a,m.b,m.a.clone().sub(perp),m.a.clone().add(perp),m.b.clone().sub(perp),m.b.clone().add(perp)];
   gMeasure.add(lines(pts,0xffc53d,.95));
