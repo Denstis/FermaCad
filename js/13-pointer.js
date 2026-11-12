@@ -4,7 +4,7 @@
 const ptr={down:false,btn:-1,x0:0,y0:0,x:0,y:0,moved:false,mode:null,hit:null};
 const touches=new Map();let pinchD=0,pinchM=null;
 function bindPointer(){const cv=renderer.domElement;
- cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);touches.set(e.pointerId,{x:e.clientX,y:e.clientY});hideCtx();
+ cv.addEventListener('pointerdown',e=>{try{cv.setPointerCapture(e.pointerId)}catch(x){}touches.set(e.pointerId,{x:e.clientX,y:e.clientY});hideCtx();
   if(touches.size===2){const ts=[...touches.values()];pinchD=Math.hypot(ts[0].x-ts[1].x,ts[0].y-ts[1].y);pinchM={x:(ts[0].x+ts[1].x)/2,y:(ts[0].y+ts[1].y)/2};
    if(ptr.mode==='node'&&tx){deserialize(tx);tx=null;rebuildScene()}
    ptr.mode='pinch';ptr.moved=true;return}
@@ -33,7 +33,9 @@ function bindPointer(){const cv=renderer.domElement;
   else finishDrag(e);
   ptr.down=false;ptr.mode=null;$('#marquee').style.display='none';document.body.classList.remove('dragging')};
  cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
- cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(Math.exp(e.deltaY*.0012),e.clientX,e.clientY)},{passive:false});
+ cv.addEventListener('wheel',e=>{e.preventDefault();let d=e.deltaY;
+  if(e.deltaMode===1)d*=16;else if(e.deltaMode===2)d*=Math.max(vpH,300);
+  zoomAt(Math.exp(clamp(d,-180,180)*.0015),e.clientX,e.clientY)},{passive:false});
  cv.addEventListener('contextmenu',e=>e.preventDefault());
  cv.addEventListener('dblclick',e=>{if(tool!=='select')return;const h=pickAt(e.clientX,e.clientY);if(!h)return;
   if(h.kind==='rod')enterPlanRod(h.id);else if(h.kind==='plane')enterPlanPlane(h.id);

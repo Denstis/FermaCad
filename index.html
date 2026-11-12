@@ -6,7 +6,7 @@
 <title>ФЕРМА·CAD — редактор стержневых конструкций</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js?v=11"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js?v=12"></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -14,18 +14,18 @@
  <header id="topbar">
   <div id="logo"><div class="mark" data-ic="logo"></div><div><b>ФЕРМА·CAD</b><small>СТЕРЖНЕВЫЕ КОНСТРУКЦИИ</small></div></div>
   <input id="projName" value="Новый проект" spellcheck="false" title="Имя проекта">
-  <div class="seg"><button id="modePlan" data-ic="grid"><span>Чертёж XY</span></button><button id="mode3d" data-ic="cube"><span>3D вид</span></button></div>
+  <div class="seg"><button id="modePlan" data-ic="grid" data-tip="Плоский чертёж XY"><span>Чертёж XY</span></button><button id="mode3d" data-ic="cube" data-tip="Объёмная 3D-модель"><span>3D вид</span></button></div>
   <div class="vsep"></div>
   <button class="tbtn" id="btnUndo" data-ic="undo" data-tip="Отменить (Ctrl+Z)"><span>Отменить</span></button>
   <button class="tbtn" id="btnRedo" data-ic="redo" data-tip="Повторить (Ctrl+Y)"><span>Повторить</span></button>
   <div class="spacer"></div>
-  <button class="tbtn" id="btnDemo" data-ic="demo"><span>Демо</span></button>
-  <button class="tbtn pri" id="btnSave" data-ic="save"><span>Сохранить</span></button>
-  <button class="tbtn" id="btnOpen" data-ic="open"><span>Открыть</span></button>
-  <button class="tbtn" id="btnImport" data-ic="import"><span>Импорт</span></button>
-  <button class="tbtn" id="btnExport" data-ic="export"><span>Экспорт ▾</span></button>
+  <button class="tbtn" id="btnDemo" data-ic="demo" data-tip="Загрузить демо-каркас 12×8 м"><span>Демо</span></button>
+  <button class="tbtn pri" id="btnSave" data-ic="save" data-tip="Сохранить проект в браузере"><span>Сохранить</span></button>
+  <button class="tbtn" id="btnOpen" data-ic="open" data-tip="Открыть сохранённый проект"><span>Открыть</span></button>
+  <button class="tbtn" id="btnImport" data-ic="import" data-tip="Импорт из JSON-файла"><span>Импорт</span></button>
+  <button class="tbtn" id="btnExport" data-ic="export" data-tip="Экспорт: JSON / DXF / OBJ"><span>Экспорт ▾</span></button>
   <button class="tbtn" id="btnHelp" data-ic="help" data-tip="Справка (F1)"><span>Справка</span></button>
-  <button class="tbtn" id="btnSide" data-ic="menu"><span>Панель</span></button>
+  <button class="tbtn" id="btnSide" data-ic="menu" data-tip="Скрыть/показать правую панель"><span>Панель</span></button>
  </header>
  <div id="main">
   <nav id="toolbar"></nav>
@@ -47,7 +47,7 @@
     <div id="viewRow">
      <span id="zoomChip">100%</span>
      <button class="vbtn cubeOnly" id="btnViews" data-tip="Сохранённые виды"><span data-ic="views"></span>Виды ▾</button>
-     <button class="vbtn cubeOnly" id="btnProj">ПЕРСП</button>
+     <button class="vbtn cubeOnly" id="btnProj" data-tip="Проекция: перспектива / ортография">ПЕРСП</button>
      <button class="vbtn cubeOnly" id="btnIso" data-tip="Изометрия"><span data-ic="home"></span>ИЗО</button>
      <button class="vbtn" id="btnFit" data-tip="Вписать всё (F)"><span data-ic="fit"></span>Вписать</button>
     </div>
@@ -105,32 +105,32 @@
 <input type="file" id="fileInput" accept=".json,application/json" hidden>
 <div id="bootErr"><div class="card"><h4 style="color:var(--danger)">НЕ УДАЛОСЬ ЗАПУСТИТЬ РЕДАКТОР</h4><p style="color:var(--muted);font-size:12px;line-height:1.6" id="bootErrMsg">Библиотека Three.js не загрузилась. Проверьте подключение к интернету (CDN) и обновите страницу.</p></div></div>
 <!-- ФЕРМА·CAD modules (split from the original single-file build) -->
-<script src="js/00-util.js?v=11"></script>
-<script src="js/01-icons.js?v=11"></script>
-<script src="js/02-types.js?v=11"></script>
-<script src="js/03-state.js?v=11"></script>
-<script src="js/04-scene3d.js?v=11"></script>
-<script src="js/05-model.js?v=11"></script>
-<script src="js/06-history.js?v=11"></script>
-<script src="js/07-scenebuild.js?v=11"></script>
-<script src="js/08-grid.js?v=11"></script>
-<script src="js/09-camera.js?v=11"></script>
-<script src="js/10-picking.js?v=11"></script>
-<script src="js/11-ghost.js?v=11"></script>
-<script src="js/12-tools.js?v=11"></script>
-<script src="js/13-pointer.js?v=11"></script>
-<script src="js/14-plan.js?v=11"></script>
-<script src="js/15-ctxmenu.js?v=11"></script>
-<script src="js/16-modals.js?v=11"></script>
-<script src="js/17-storage.js?v=11"></script>
-<script src="js/18-demo.js?v=11"></script>
-<script src="js/19-tree.js?v=11"></script>
-<script src="js/20-props.js?v=11"></script>
-<script src="js/21-coach.js?v=11"></script>
-<script src="js/22-params.js?v=11"></script>
-<script src="js/23-toolbar.js?v=11"></script>
-<script src="js/24-cube.js?v=11"></script>
-<script src="js/25-keys.js?v=11"></script>
-<script src="js/26-app.js?v=11"></script>
+<script src="js/00-util.js?v=12"></script>
+<script src="js/01-icons.js?v=12"></script>
+<script src="js/02-types.js?v=12"></script>
+<script src="js/03-state.js?v=12"></script>
+<script src="js/04-scene3d.js?v=12"></script>
+<script src="js/05-model.js?v=12"></script>
+<script src="js/06-history.js?v=12"></script>
+<script src="js/07-scenebuild.js?v=12"></script>
+<script src="js/08-grid.js?v=12"></script>
+<script src="js/09-camera.js?v=12"></script>
+<script src="js/10-picking.js?v=12"></script>
+<script src="js/11-ghost.js?v=12"></script>
+<script src="js/12-tools.js?v=12"></script>
+<script src="js/13-pointer.js?v=12"></script>
+<script src="js/14-plan.js?v=12"></script>
+<script src="js/15-ctxmenu.js?v=12"></script>
+<script src="js/16-modals.js?v=12"></script>
+<script src="js/17-storage.js?v=12"></script>
+<script src="js/18-demo.js?v=12"></script>
+<script src="js/19-tree.js?v=12"></script>
+<script src="js/20-props.js?v=12"></script>
+<script src="js/21-coach.js?v=12"></script>
+<script src="js/22-params.js?v=12"></script>
+<script src="js/23-toolbar.js?v=12"></script>
+<script src="js/24-cube.js?v=12"></script>
+<script src="js/25-keys.js?v=12"></script>
+<script src="js/26-app.js?v=12"></script>
 </body>
 </html>

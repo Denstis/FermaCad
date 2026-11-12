@@ -1,6 +1,18 @@
 /* ==================== TOOLBAR & TOPBAR ==================== */
 'use strict';
 /* ================= TOOLBAR & TOPBAR ================= */
+function initTips(){const tip=document.createElement('div');tip.id='tip';document.body.appendChild(tip);let el=null;
+ const hide=()=>{el=null;tip.classList.remove('on')};
+ const show=t=>{tip.textContent=t.dataset.tip;tip.classList.add('on');
+  const r=t.getBoundingClientRect(),tr=tip.getBoundingClientRect();
+  let x=r.right+8;if(x+tr.width>innerWidth-6)x=r.left-tr.width-8;if(x<6)x=6;
+  let y=r.top+r.height/2-tr.height/2;y=clamp(y,6,innerHeight-tr.height-6);
+  tip.style.left=x+'px';tip.style.top=y+'px'};
+ document.addEventListener('pointerover',e=>{const t=e.target.closest?e.target.closest('[data-tip]'):null;
+  if(t&&t!==el){el=t;show(t)}else if(!t&&el)hide()});
+ document.addEventListener('pointerdown',hide,true);
+ window.addEventListener('wheel',hide,{passive:true});
+ window.addEventListener('blur',hide)}
 function buildToolbar(){const tb=$('#toolbar');let html='';
  TOOL_DEFS.forEach(t=>{if(t.sec){html+=`<div class="tlabel">${t.sec}</div>`;return}
   html+=`<button class="tool" data-tool="${t.id}" data-tip="${esc(t.label)} (${t.hk})" ${t.c?`style="--tc:${cssColor(t.c)}"`:''}>${t.c?'<span class="dot"></span>':''}<i>${ICONS[t.ic]}</i><span class="hk">${t.hk}</span></button>`;

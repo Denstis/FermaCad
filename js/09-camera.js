@@ -28,8 +28,12 @@ function zoomAt(f,cx,cy){if(mode==='plan'){const q=rayPlane(cx,cy,pl.o,pl.n);
   pl.g.zoom=clamp(pl.g.zoom/f,.003,2);
   if(q){const d=q.clone().sub(pl.o);const a=d.dot(pl.u),b=d.dot(pl.v);pl.g.ca=a+(pl.g.ca-a)*f;pl.g.cb=b+(pl.g.cb-b)*f}
   scheduleDecor()}
- else{const p=rayPlane(cx,cy,ctrl.g.t,viewDir());ctrl.g.r=clamp(ctrl.g.r*f,250,250000);
-  if(p)ctrl.g.t.copy(p).addScaledVector(ctrl.g.t.clone().sub(p),f)}}
+ else{const nr=clamp(ctrl.g.r*f,250,250000),fr=nr/ctrl.g.r,t0=ctrl.g.t.clone();
+  const p=rayPlane(cx,cy,t0,viewDir());
+  if(p){const d=p.sub(t0),maxd=ctrl.g.r*.75;
+   if(d.lengthSq()>maxd*maxd)d.setLength(maxd);
+   ctrl.g.t.copy(t0).addScaledVector(d,1-fr)}
+  ctrl.g.r=nr}}
 function panBy(dx,dy){if(mode==='plan'){pl.g.ca-=dx/pl.zoom;pl.g.cb+=dy/pl.zoom;scheduleDecor()}
  else{const s=worldPerPx();const m=activeCam().matrixWorld.elements;
   const right=V3(m[0],m[1],m[2]),up=V3(m[4],m[5],m[6]);

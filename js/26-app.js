@@ -18,7 +18,7 @@ function tick(t){const dt=clamp((t-lastT)/1000,.001,.05);lastT=t;
  requestAnimationFrame(tick)}
 /* ================= BOOT ================= */
 function boot(){if(typeof THREE==='undefined'){$('#bootErr').style.display='grid';return}
- try{initThree();buildToolbar();bindTopbar();bindParams();bindPointer();bindCube();fillIcons();
+ try{initThree();buildToolbar();bindTopbar();bindParams();bindPointer();bindCube();fillIcons();initTips();
   setPlanBasis(V3(),AX,AY,AZ);
   let restored=false;
   try{const a=JSON.parse(localStorage.getItem('fc.auto'));

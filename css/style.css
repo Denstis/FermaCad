@@ -62,11 +62,8 @@ svg{display:block}
 .tool .hk{position:absolute;right:4px;bottom:3px;font-size:8px;font-family:var(--mono);color:var(--dim);font-weight:700}
 .tool i{width:21px;height:21px}.tool i svg{width:100%;height:100%}
 .tool.dis{opacity:.3;pointer-events:none}
-[data-tip]{position:relative}
-[data-tip]::after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%) translateX(-4px);background:#0a1626;border:1px solid var(--line2);color:var(--ink);padding:5px 9px;border-radius:7px;font-size:11px;font-weight:500;white-space:pre;opacity:0;pointer-events:none;transition:.15s;z-index:200;box-shadow:0 6px 20px rgba(0,0,0,.5)}
-[data-tip]:hover::after{opacity:1;transform:translateY(-50%)}
-.tip-b::after{left:50%;top:calc(100% + 8px);transform:translateX(-50%) translateY(-4px)}
-.tip-b:hover::after{transform:translateX(-50%)}
+#tip{position:fixed;z-index:9999;background:#0a1626;border:1px solid var(--line2);color:var(--ink);padding:5px 9px;border-radius:7px;font-size:11px;font-weight:500;white-space:pre;pointer-events:none;opacity:0;transform:translateY(4px);transition:.13s;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+#tip.on{opacity:1;transform:none}
 /* ---------- VIEWPORT ---------- */
 #vp{flex:1;position:relative;min-width:0;overflow:hidden;background:
  radial-gradient(1100px 700px at 18% -10%,rgba(38,80,150,.28),transparent 60%),
