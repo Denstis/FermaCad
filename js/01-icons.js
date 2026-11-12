@@ -53,4 +53,7 @@ split:I('<path d="M4 12h16M8 8v8M16 8v8M12 6v12" stroke-width="1.5"/><circle cx=
 mid:I('<path d="M3 12h18"/><circle cx="12" cy="12" r="3"/>'),
 similar:I('<circle cx="8" cy="8" r="4"/><circle cx="16" cy="16" r="4"/><path d="M11 11l2 2"/>'),
 hide:I('<path d="M4 4l16 16M9 5.5A10 10 0 0122 12s-1.5 2.6-4 4.3M6 7C3.5 8.8 2 12 2 12s3.5 6 10 6c1.5 0 2.8-.3 4-.8"/>')};
-function fillIcons(root=document){root.querySelectorAll('[data-ic]').forEach(el=>{el.innerHTML=ICONS[el.dataset.ic]||'';if(!el.querySelector('svg'))return;const s=el.querySelector('svg');if(el.tagName==='BUTTON'&&!el.querySelector('span')){el.insertBefore(s,el.firstChild)}else if(el.classList.contains('mark')||el.tagName==='DIV'||el.tagName==='SPAN'){/*already*/}})}
+function fillIcons(root=document){root.querySelectorAll('[data-ic]').forEach(el=>{const svg=ICONS[el.dataset.ic];if(!svg||el.querySelector('svg'))return;
+ if(el.tagName==='BUTTON'&&!el.querySelector('span')){el.innerHTML=svg}
+ else if(el.tagName==='BUTTON'){el.insertAdjacentHTML('afterbegin',svg)}
+ else{el.innerHTML=svg}})}
