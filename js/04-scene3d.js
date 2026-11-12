@@ -59,10 +59,10 @@ function labelSprite(text,opt={}){const{color='#dff1ff',bg='rgba(8,16,32,.9)',bo
  s.scale.set(worldH*tex.image.width/tex.image.height,worldH,1);s.renderOrder=30;s.userData.sprite=true;s.userData.ar=tex.image.width/tex.image.height;return s}
 function clearGroup(g){for(let i=g.children.length-1;i>=0;i--){const o=g.children[i];g.remove(o);
  o.traverse(n=>{if(n.userData.own&&n.geometry)n.geometry.dispose();if(n.userData.sprite)n.material.dispose();else if(n.userData.ownMat&&n.material)n.material.dispose()})}}
-function lines(pts,color,opacity=1,own=true,dashed=false){const geo=new THREE.BufferGeometry().setFromPoints(pts);
- let m;if(dashed){m=new THREE.LineDashedMaterial({color:linColor(color),transparent:true,opacity,dashSize:180,gapSize:120,depthTest:false});}
- else m=new THREE.LineBasicMaterial({color:linColor(color),transparent:true,opacity,depthTest:false});
+function lines(pts,color,opacity=1,own=true,dashed=false,top=false){const geo=new THREE.BufferGeometry().setFromPoints(pts);
+ let m;if(dashed){m=new THREE.LineDashedMaterial({color:linColor(color),transparent:true,opacity,dashSize:180,gapSize:120,depthTest:!top,depthWrite:false});}
+ else m=new THREE.LineBasicMaterial({color:linColor(color),transparent:true,opacity,depthTest:!top,depthWrite:false});
  const l=dashed?new THREE.Line(geo,m):new THREE.LineSegments(geo,m);if(dashed)l.computeLineDistances();
- l.renderOrder=12;l.userData.own=own;l.userData.ownMat=true;return l}
+ l.renderOrder=top?12:2;l.userData.own=own;l.userData.ownMat=true;return l}
 function setCyl(mesh,a,b,r){const d=b.clone().sub(a);const len=Math.max(d.length(),.001);
  mesh.position.copy(a).addScaledVector(d,.5);mesh.quaternion.setFromUnitVectors(YUP,d.normalize());mesh.scale.set(r,len,r)}

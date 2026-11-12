@@ -5,11 +5,11 @@ function ghostSphere(p,r,color=0x6fd3ff,op=.4){const m=new THREE.Mesh(unitSphere
 function ghostCyl(a,b,r,color,op=.32){const m=new THREE.Mesh(unitCyl,new THREE.MeshBasicMaterial({color:linColor(color),transparent:true,opacity:op,depthWrite:false}));
  setCyl(m,a,b,r);m.renderOrder=8;m.userData.ownMat=true;return m}
 function drawGuides3D(s){if(!s)return;const z=s.workZ||0;const R=4500;
- if(s.gx!==null&&s.gx!==undefined)gGhost.add(lines([V3(s.gx,s.p.y-R,z),V3(s.gx,s.p.y+R,z)],0xff5fd2,.8,true,true));
- if(s.gy!==null&&s.gy!==undefined)gGhost.add(lines([V3(s.p.x-R,s.gy,z),V3(s.p.x+R,s.gy,z)],0xff5fd2,.8,true,true))}
+ if(s.gx!==null&&s.gx!==undefined)gGhost.add(lines([V3(s.gx,s.p.y-R,z),V3(s.gx,s.p.y+R,z)],0xff5fd2,.8,true,true,true));
+ if(s.gy!==null&&s.gy!==undefined)gGhost.add(lines([V3(s.p.x-R,s.gy,z),V3(s.p.x+R,s.gy,z)],0xff5fd2,.8,true,true,true))}
 function drawGuidesPlan(s){if(!s)return;const E=40000;const P=(a,b)=>pl.o.clone().addScaledVector(pl.u,a).addScaledVector(pl.v,b);
- if(s.gx!==null&&s.gx!==undefined)gGhost.add(lines([P(s.gx,-E),P(s.gx,E)],0xff5fd2,.7,true,true));
- if(s.gy!==null&&s.gy!==undefined)gGhost.add(lines([P(-E,s.gy),P(E,s.gy)],0xff5fd2,.7,true,true))}
+ if(s.gx!==null&&s.gx!==undefined)gGhost.add(lines([P(s.gx,-E),P(s.gx,E)],0xff5fd2,.7,true,true,true));
+ if(s.gy!==null&&s.gy!==undefined)gGhost.add(lines([P(-E,s.gy),P(E,s.gy)],0xff5fd2,.7,true,true,true))}
 function buildWorkGrid(){clearGroup(gWork);if(!chain.a||mode!=='3d')return;const p=chain.a.p;const g=params.grid;const R=g*10;const pts=[];
  for(let x=Math.ceil((p.x-R)/g)*g;x<=p.x+R;x+=g)pts.push(V3(x,p.y-R,p.z),V3(x,p.y+R,p.z));
  for(let y=Math.ceil((p.y-R)/g)*g;y<=p.y+R;y+=g)pts.push(V3(p.x-R,y,p.z),V3(p.x+R,y,p.z));
@@ -52,12 +52,12 @@ function ghostColumnPost(cx,cy){let extra='';const hit=pickAt(cx,cy,{kinds:['nod
   else{const t=postTarget(n);
    if(t){const p=V3(n.p.x,n.p.y,t.z);gGhost.add(ghostCyl(n.p,p,TYPES.post.r*params.rodScale,TYPES.post.color,.4));
     gGhost.add(ghostSphere(p,params.nodeR,TYPES.post.color,.55));extra=`СТОЙКА → ${t.rod.name} • z=${fmt(t.z)} мм`}
-   else{gGhost.add(lines([n.p,n.p.clone().add(V3(0,0,params.colH))],0xff5470,.6,true,true));extra='НЕТ ПЕРЕСЕЧЕНИЯ СО СТЕРЖНЕМ ВЫШЕ'}}}
+   else{gGhost.add(lines([n.p,n.p.clone().add(V3(0,0,params.colH))],0xff5470,.6,true,true,true));extra='НЕТ ПЕРЕСЕЧЕНИЯ СО СТЕРЖНЕМ ВЫШЕ'}}}
  else extra=tool==='column'?'КЛИКНИТЕ ПО УЗЛУ / ОПОРЕ':'КЛИКНИТЕ ПО УЗЛУ'
  return{snap:null,extra}}
 function ghostRodTool(cx,cy){const snap=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,chain.a?chain.a.p.z:0,true);let extra='';
  if(snap){gGhost.add(ghostSphere(snap.p,params.nodeR*.9,TYPES[tool].color,.5));
-  if(chain.a){const a=chain.a.p;gGhost.add(lines([a,snap.p],TYPES[tool].color,.95,true,true));
+  if(chain.a){const a=chain.a.p;gGhost.add(lines([a,snap.p],TYPES[tool].color,.95,true,true,true));
    const L=a.distanceTo(snap.p);const wH=mode==='plan'?clamp(15/pl.zoom,200,1300):Math.max(ctrl.r*.018,250);
    const lbl=labelSprite(fmt(L)+' мм',{worldH:wH,border:'#1e5a7a',color:'#aee4ff'});
    lbl.position.copy(a).lerp(snap.p,.5).add(V3(0,0,wH));if(mode==='3d')lbl.userData.autoScale=true;gGhost.add(lbl);
@@ -66,12 +66,12 @@ function ghostRodTool(cx,cy){const snap=mode==='plan'?snapPlan(cx,cy):snap3D(cx,
   mode==='plan'?drawGuidesPlan(snap):drawGuides3D(snap)}
  return{snap,extra}}
 function ghostMeasure(cx,cy){const snap=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,measPick?measPick.z:0,true);let extra='';
- if(snap&&measPick){gGhost.add(lines([measPick,snap.p],0xffc53d,.9,true,true));
+ if(snap&&measPick){gGhost.add(lines([measPick,snap.p],0xffc53d,.9,true,true,true));
   const lbl=labelSprite(fmt(measPick.distanceTo(snap.p))+' мм',{worldH:mode==='plan'?clamp(15/pl.zoom,200,1300):Math.max(ctrl.r*.018,250),border:'#8a6a20',color:'#ffe2a0'});
   lbl.position.copy(measPick).lerp(snap.p,.5);if(mode==='3d')lbl.userData.autoScale=true;gGhost.add(lbl);extra='Вторая точка размера'}
  return{snap,extra}}
 function ghostPlane(cx,cy){planePick.forEach(id=>{const n=M.nodes.get(id);if(n)gGhost.add(ghostSphere(n.p,params.nodeR*1.6,0x6fd3ff,.35))});
- if(planePick.length===2){const a=M.nodes.get(planePick[0]),b=M.nodes.get(planePick[1]);if(a&&b)gGhost.add(lines([a.p,b.p],0x6fd3ff,.8,true,true))}
+ if(planePick.length===2){const a=M.nodes.get(planePick[0]),b=M.nodes.get(planePick[1]);if(a&&b)gGhost.add(lines([a.p,b.p],0x6fd3ff,.8,true,true,true))}
  return{snap:null,extra:`Выберите узел ${planePick.length+1} из 3`}}
 function ghostSelectHint(cx,cy){let extra='';
  if(tool==='select'&&hover.kind){const h=hover;
