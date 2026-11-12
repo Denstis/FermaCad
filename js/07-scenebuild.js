@@ -5,7 +5,7 @@ function ctxNodeIds(){const s=new Set();
  if(mode!=='plan'){M.nodes.forEach(n=>s.add(n.id));return s}
  if(planCtx.kind==='xy')M.nodes.forEach(n=>{if(Math.abs(n.p.z)<1)s.add(n.id)});
  else if(planCtx.kind==='rod'){const r=M.rods.get(planCtx.rodId);if(r){s.add(r.a);s.add(r.b);hostedNodes(r.id).forEach(n=>s.add(n.id))}}
- else if(planCtx.kind==='plane'){const b=planeBasis(M.planes.get(planCtx.planeId)?.nodes||[]);if(b)M.nodes.forEach(n=>{if(Math.abs(n.p.clone().sub(b.o).dot(b.n))<1)s.add(n.id)})}
+ else if(planCtx.kind==='plane'){const b=planeFrame(M.planes.get(planCtx.planeId));if(b)M.nodes.forEach(n=>{if(Math.abs(n.p.clone().sub(b.o).dot(b.n))<1)s.add(n.id)})}
  return s}
 function ctxRodIds(){const s=new Set();
  if(mode!=='plan'){M.rods.forEach(r=>s.add(r.id));return s}
@@ -39,22 +39,32 @@ function buildRodObjects(cr){
   const pick=new THREE.Mesh(unitCyl,matInvis);setCyl(pick,pts[0],pts[pts.length-1],Math.max(rad*2.6,100));pick.visible=false;pick.userData={kind:'rod',id:r.id};g.add(pick);
   if(M.hidden.has('r'+r.id))g.visible=false;
   gRods.add(g);rodObjs.set(r.id,{g,segs,pick,ghost});pickRods.push(pick)}}
-/* ---- plane objects: padded quad + border + name label ---- */
+/* ---- plane objects: polygon (p.poly) or padded rect quad + border + name label ---- */
 function buildPlaneObjects(){
- for(const p of M.planes.values()){const b=planeBasis(p.nodes);if(!b)continue;
-  let minA=1e9,maxA=-1e9,minB=1e9,maxB=-1e9;
-  p.nodes.forEach(id=>{const q=M.nodes.get(id).p.clone().sub(b.o);const a=q.dot(b.u),bb=q.dot(b.v);minA=Math.min(minA,a);maxA=Math.max(maxA,a);minB=Math.min(minB,bb);maxB=Math.max(maxB,bb)});
-  const pad=900;minA-=pad;maxA+=pad;minB-=pad;maxB+=pad;
-  const c0=b.o.clone().addScaledVector(b.u,minA).addScaledVector(b.v,minB);
-  const c1=b.o.clone().addScaledVector(b.u,maxA).addScaledVector(b.v,minB);
-  const c2=b.o.clone().addScaledVector(b.u,maxA).addScaledVector(b.v,maxB);
-  const c3=b.o.clone().addScaledVector(b.u,minA).addScaledVector(b.v,maxB);
-  const geo=new THREE.BufferGeometry().setFromPoints([c0,c1,c2,c0,c2,c3]);geo.computeVertexNormals();
+ for(const p of M.planes.values()){
   const inCtx=mode==='plan'&&planCtx.kind==='plane'&&planCtx.planeId===p.id;
+  let geo,border,pts;
+  if(p.poly&&p.poly.length>=3){pts=p.poly.map(v=>V3(v[0],v[1],v[2]));
+   const pos=[];for(let i=1;i<pts.length-1;i++)for(const k of [0,i,i+1])pos.push(pts[k].x,pts[k].y,pts[k].z);
+   geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+   border=lines(pts.concat([pts[0]]),0x6fd3ff,inCtx?.9:.4);
+  } else {const b=planeBasis(p.nodes);if(!b)continue;
+   let minA=1e9,maxA=-1e9,minB=1e9,maxB=-1e9;
+   p.nodes.forEach(id=>{const q=M.nodes.get(id).p.clone().sub(b.o);const a=q.dot(b.u),bb=q.dot(b.v);minA=Math.min(minA,a);maxA=Math.max(maxA,a);minB=Math.min(minB,bb);maxB=Math.max(maxB,bb)});
+   const pad=900;minA-=pad;maxA+=pad;minB-=pad;maxB+=pad;
+   const c0=b.o.clone().addScaledVector(b.u,minA).addScaledVector(b.v,minB);
+   const c1=b.o.clone().addScaledVector(b.u,maxA).addScaledVector(b.v,minB);
+   const c2=b.o.clone().addScaledVector(b.u,maxA).addScaledVector(b.v,maxB);
+   const c3=b.o.clone().addScaledVector(b.u,minA).addScaledVector(b.v,maxB);
+   pts=[c0,c1,c2,c3];
+   geo=new THREE.BufferGeometry().setFromPoints([c0,c1,c2,c0,c2,c3]);
+   border=lines([c0,c1,c1,c2,c2,c3,c3,c0],0x6fd3ff,inCtx?.9:.4)}
+  geo.computeVertexNormals();
   const quad=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:linColor(0x6fd3ff),transparent:true,opacity:inCtx?params.planeOp*1.6:params.planeOp,side:THREE.DoubleSide,depthWrite:false}));
   quad.userData={kind:'plane',id:p.id,own:true,ownMat:true};quad.renderOrder=2;
-  const border=lines([c0,c1,c1,c2,c2,c3,c3,c0],0x6fd3ff,inCtx?.9:.4);
-  const lbl=labelSprite(p.name,{border:'#2c7ea8',color:'#a8e4ff',worldH:400});lbl.position.copy(c3).addScaledVector(b.v,300);lbl.userData.autoScale=true;
+  const ctr=V3();pts.forEach(v=>ctr.add(v));ctr.multiplyScalar(1/pts.length);
+  const na=geo.attributes.normal.array;const nrm=V3(na[0],na[1],na[2]).normalize();
+  const lbl=labelSprite(p.name,{border:'#2c7ea8',color:'#a8e4ff',worldH:400});lbl.position.copy(ctr).addScaledVector(nrm,300);lbl.userData.autoScale=true;
   const g=new THREE.Group();g.add(quad,border,lbl);g.userData={kind:'plane',id:p.id};
   if(M.hidden.has('p'+p.id))g.visible=false;
   gPlanes.add(g);planeObjs.set(p.id,{g,quad,border,lbl});pickPlanes.push(quad)}}

@@ -50,8 +50,20 @@ function refreshAfterMove(n){refreshNodePos(n.id);for(const r of attachedRods(n.
 function planeBasis(ids){const A=M.nodes.get(ids[0]),B=M.nodes.get(ids[1]),C=M.nodes.get(ids[2]);if(!A||!B||!C)return null;
  const u=B.p.clone().sub(A.p);const w=C.p.clone().sub(A.p);const n=u.clone().cross(w);if(n.length()<1)return null;
  n.normalize();u.normalize();const v=n.clone().cross(u).normalize();return{o:A.p.clone(),u,v,n}}
-function makePlane(ids){const b=planeBasis(ids);if(!b){toast('Узлы лежат на одной прямой — плоскость не построена',{type:'err'});return null}
- const id=uid();const p={id,nodes:[...ids],name:'Плоскость-'+(++M.counters.p)};M.planes.set(id,p);return p}
+function canonN(n){if(n.z<-1e-9||(Math.abs(n.z)<=1e-9&&n.y<0))n.negate();return n}
+/* frame for any plane: polygon planes get deterministic basis (normal + first edge), legacy 3-node planes use planeBasis */
+function planeFrame(p){if(!p)return null;
+ if(p.poly&&p.poly.length>=3){const pts=p.poly.map(v=>V3(v[0],v[1],v[2]));
+  const n=new THREE.Vector3();
+  for(let i=0;i<pts.length;i++){const a=pts[i],b=pts[(i+1)%pts.length];n.x+=(a.y-b.y)*(a.z+b.z);n.y+=(a.z-b.z)*(a.x+b.x);n.z+=(a.x-b.x)*(a.y+b.y)}
+  if(n.lengthSq()<1)return planeBasis(p.nodes);n.normalize();canonN(n);
+  const u=pts[1].clone().sub(pts[0]);u.addScaledVector(n,-u.dot(n));
+  if(u.length()<1e-6)return planeBasis(p.nodes);u.normalize();
+  const v=n.clone().cross(u).normalize();
+  return{o:pts[0].clone(),u,v,n}}
+ return planeBasis(p.nodes)}
+function makePlane(ids,poly){const b=planeBasis(ids);if(!b){toast('Узлы лежат на одной прямой — плоскость не построена',{type:'err'});return null}
+ const id=uid();const p={id,nodes:[...ids],name:'Плоскость-'+(++M.counters.p)};if(poly&&poly.length>=3)p.poly=poly.map(v=>[v.x,v.y,v.z]);M.planes.set(id,p);return p}
 function gatherSelection(){const ns=new Set(sel.nodes),rs=new Set(sel.rods);
  sel.rods.forEach(id=>{const r=M.rods.get(id);if(r){ns.add(r.a);ns.add(r.b)}});
  rs.forEach(id=>{});for(const r of M.rods.values())if(ns.has(r.a)&&ns.has(r.b)&&sel.rods.has(r.id))rs.add(r.id);

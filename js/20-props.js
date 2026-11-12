@@ -25,6 +25,7 @@ function cardRod(r1){const hn=hostedNodes(r1.id).length;
   <button class="btn warn" data-act="del">Удалить стержень</button></div>`}
 function cardPlane(p1){return `<div class="card"><h4><span class="sw" style="background:#6fd3ff;color:#6fd3ff"></span>ПЛОСКОСТЬ</h4>
   <div class="row"><label>Имя</label><input data-k="planeName" value="${esc(p1.name)}"></div>
+  ${p1.poly&&p1.poly.length>=3?`<div class="kv"><span>Контур</span><b>полигон ${p1.poly.length} верш. по крайним узлам</b></div>`:''}
   <div class="kv"><span>Узлы</span><b>${p1.nodes.map(id=>esc(M.nodes.get(id)?.name||'?')).join(', ')}</b></div>
   <button class="btn gold" data-act="openPlane" style="margin-top:9px">Чертёж в плоскости</button>
   <button class="btn warn" data-act="del">Удалить плоскость</button></div>`}

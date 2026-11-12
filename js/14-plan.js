@@ -18,7 +18,7 @@ function enterPlanRod(id){const r=M.rods.get(id);if(!r)return;mode='plan';planCt
  pl.ca=pl.g.ca;pl.cb=pl.g.cb;pl.zoom=pl.g.zoom;
  scene.fog=null;chain.a=null;clearGroup(gWork);setTool('node');rebuildGrid();afterChange();updateModeUI();
  toast(`Чертёж стержня ${r.name} • клик по оси — новый узел • Esc — назад в 3D`,{type:'info'})}
-function enterPlanPlane(id){const p=M.planes.get(id);if(!p)return;const b=planeBasis(p.nodes);if(!b)return;
+function enterPlanPlane(id){const p=M.planes.get(id);if(!p)return;const b=planeFrame(p);if(!b)return;
  mode='plan';planCtx={kind:'plane',planeId:id};setPlanBasis(b.o,b.u,b.v,b.n);
  const ids=ctxNodeIds();const c=V3();let n=0;ids.forEach(i=>{c.add(M.nodes.get(i).p);n++});
  if(n){c.divideScalar(n);const d=c.clone().sub(b.o);pl.g.ca=d.dot(b.u);pl.g.cb=d.dot(b.v)}

@@ -4,7 +4,7 @@
 function serialize(){return{v:1,name:M.name,counters:M.counters,
  nodes:nodeArr().map(n=>({id:n.id,p:n.p.toArray(),type:n.type,host:n.host,name:n.name})),
  rods:[...M.rods.values()].map(r=>({id:r.id,a:r.a,b:r.b,type:r.type,name:r.name})),
- planes:[...M.planes.values()].map(p=>({id:p.id,nodes:p.nodes,name:p.name})),
+ planes:[...M.planes.values()].map(p=>({id:p.id,nodes:p.nodes,name:p.name,poly:p.poly})),
  groups:[...M.groups.values()].map(g=>({...g})),hidden:[...M.hidden],measures:M.measures.map(m=>({a:m.a.toArray(),b:m.b.toArray()})),views:M.views.map(v=>({...v}))}}
 function deserialize(d){M=freshModel();M.name=d.name||'Проект';Object.assign(M.counters,d.counters||{});
  (d.nodes||[]).forEach(n=>M.nodes.set(n.id,{id:n.id,p:V3(...n.p),type:n.type||'node',host:n.host||null,name:n.name||'Узел-'+n.id}));

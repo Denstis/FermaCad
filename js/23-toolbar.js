@@ -62,8 +62,29 @@ function selPlaneTriple(){const{pts,ids}=selPlaneData();
 function planeFromSelectionAction(){const tr=selPlaneTriple();
  if(!tr){toast('Нужно ≥3 выделенных узла (или стержней), лежащих в одной плоскости и не на одной прямой',{type:'warn'});return}
  const nPts=selPlaneData().pts.length;
- pushUndo();const p=makePlane(tr);
+ const poly=selPlaneHull();
+ pushUndo();const p=makePlane(tr,poly);
  if(!p){undoStack.pop();updateUndoUI();return}
  afterChange();selectOnly('plane',p.id);
- toast(`${p.name} по выделению (${nPts} опорных точек)`,{type:'ok'})}
+ toast(`${p.name}: контур из ${p.poly?p.poly.length:'?'} крайних точек (${nPts} опорных)`,{type:'ok'})}
+/* convex hull of all selected points in the fitted plane: vertices = extreme nodes of selection */
+function selPlaneHull(){const{pts}=selPlaneData();const fp=fitSelPlane(pts);if(!fp)return null;
+ const{o,n}=fp;
+ let u=n.clone().cross(AX);if(u.lengthSq()<1e-6)u=n.clone().cross(AY);u.normalize();let v=n.clone().cross(u).normalize();
+ const co=pts.map(p=>{const d=p.clone().sub(o);return[d.dot(u),d.dot(v)]});
+ let A=0,B=1,bd=-1;
+ for(let i=0;i<co.length;i++)for(let j=i+1;j<co.length;j++){const d=Math.hypot(co[i][0]-co[j][0],co[i][1]-co[j][1]);if(d>bd){bd=d;A=i;B=j}}
+ if(bd<=0)return null;
+ u=pts[B].clone().sub(pts[A]);u.addScaledVector(n,-u.dot(n));if(u.length()<1e-6)return null;u.normalize();v=n.clone().cross(u).normalize();
+ const cp=pts.map(p=>{const d=p.clone().sub(o);return[d.dot(u),d.dot(v)]});
+ const idx=cp.map((c,i)=>i).sort((a,b)=>cp[a][0]-cp[b][0]||cp[a][1]-cp[b][1]);
+ const cr=(oa,ob,oc)=>(cp[ob][0]-cp[oa][0])*(cp[oc][1]-cp[oa][1])-(cp[ob][1]-cp[oa][1])*(cp[oc][0]-cp[oa][0]);
+ const lo=[],up=[];
+ for(const i of idx){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],i)<=0)lo.pop();lo.push(i)}
+ for(let k=idx.length-1;k>=0;k--){const i=idx[k];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],i)<=0)up.pop();up.push(i)}
+ const hull=lo.slice(0,lo.length-1).concat(up.slice(0,up.length-1));
+ if(hull.length<3)return null;
+ let area=0;for(let i=0;i<hull.length;i++){const a=cp[hull[i]],b=cp[hull[(i+1)%hull.length]];area+=a[0]*b[1]-b[0]*a[1]}
+ if(Math.abs(area)/2<1)return null;
+ return hull.map(i=>pts[i].clone())}
 function updateToolAvail(){const b=$('#tbPlaneSel');if(b)b.classList.toggle('dis',!selPlaneTriple())}
