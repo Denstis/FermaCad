@@ -53,7 +53,14 @@ function ghostColumnPost(cx,cy){let extra='';const hit=pickAt(cx,cy,{kinds:['nod
    if(t){const p=V3(n.p.x,n.p.y,t.z);gGhost.add(ghostCyl(n.p,p,TYPES.post.r*params.rodScale,TYPES.post.color,.4));
     gGhost.add(ghostSphere(p,params.nodeR,TYPES.post.color,.55));extra=`СТОЙКА → ${t.rod.name} • z=${fmt(t.z)} мм`}
    else{gGhost.add(lines([n.p,n.p.clone().add(V3(0,0,params.colH))],0xff5470,.6,true,true,true));extra='НЕТ ПЕРЕСЕЧЕНИЯ СО СТЕРЖНЕМ ВЫШЕ'}}}
- else extra=tool==='column'?'КЛИКНИТЕ ПО УЗЛУ / ОПОРЕ':'КЛИКНИТЕ ПО УЗЛУ'
+ else{if(tool==='column'){const s=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,0,false);
+   if(s){const p=mode==='plan'?s.p.clone():V3(s.p.x,s.p.y,0);const top=p.clone().add(V3(0,0,params.colH));
+    gGhost.add(ghostCyl(p,top,TYPES.column.r*params.rodScale,TYPES.column.color,.35));
+    gGhost.add(ghostSphere(p,params.nodeR,TYPES.column.color,.5));gGhost.add(ghostSphere(top,params.nodeR,TYPES.column.color,.5));
+    const lbl=labelSprite('h = '+fmt(params.colH),{worldH:mode==='plan'?clamp(15/pl.zoom,200,1300):ctrl.r*.02,border:'#6b2438',color:'#ff9db0'});
+    lbl.position.copy(p).lerp(top,.5).add(V3(300,0,0));if(mode==='3d')lbl.userData.autoScale=true;gGhost.add(lbl);
+    extra=`СТОЛБ на сетке • ⊥ XY • ${fmt(params.colH)} мм`}}
+  else extra='КЛИКНИТЕ ПО УЗЛУ'}
  return{snap:null,extra}}
 function ghostRodTool(cx,cy){const snap=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,chain.a?chain.a.p.z:0,true);let extra='';
  if(snap){gGhost.add(ghostSphere(snap.p,params.nodeR*.9,TYPES[tool].color,.5));

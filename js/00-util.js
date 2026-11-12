@@ -7,6 +7,7 @@ const fmt=n=>Math.round(n).toLocaleString('ru-RU');
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const debounce=(f,t)=>{let h;return(...a)=>{clearTimeout(h);h=setTimeout(()=>f(...a),t)}};
 let _uid=1;const uid=()=>_uid++;
+function setUidFloor(v){v=Math.floor(v);if(v>=_uid)_uid=v+1}
 const V3=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
 const AX=V3(1,0,0),AY=V3(0,1,0),AZ=V3(0,0,1),YUP=V3(0,1,0);
 const fmtAxis=n=>Math.abs(n)>=1000&&n%1000===0?(n/1000)+' м':fmt(n);

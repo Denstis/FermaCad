@@ -41,19 +41,26 @@ function clickNode({cx,cy,g}){
  if(s.type==='rod'){const res=nodeOnRod(s.rod,s.t);if(!res.created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}}
  else{const{created}=getOrCreateNode(mode==='plan'?s.p:V3(s.p.x,s.p.y,s.p.z));if(!created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}}
  afterChange()}
-function clickColumnPost({cx,cy,g}){
+function clickColumnPost({cx,cy,g,ev}){
+ if(tool==='column'){
+  const h=pickAt(cx,cy,{kinds:['node']});
+  let base=null;
+  if(h)base=M.nodes.get(h.id);
+  else{const s=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,0,false);if(!s)return;
+   g.pushOnce();base=getOrCreateNode(V3(s.p.x,s.p.y,mode==='plan'?s.p.z:0)).node}
+  g.pushOnce();
+  const top=getOrCreateNode(base.p.clone().add(V3(0,0,params.colH)));
+  const r=addRod(base.id,top.node.id,'column');
+  if(!r){undoStack.pop();updateUndoUI();toast('Столб из этого узла уже существует',{type:'warn'});return}
+  afterChange();toast(`＋ ${r.name} • ${fmt(params.colH)} мм`,{type:'ok',timeout:1400});return}
  const h=pickAt(cx,cy,{kinds:['node']});
  if(!h){toast('Кликните по узлу или опоре',{type:'warn',timeout:1800});return}
  const n=M.nodes.get(h.id);g.pushOnce();
- if(tool==='column'){const top=getOrCreateNode(n.p.clone().add(V3(0,0,params.colH)));
-  const r=addRod(n.id,top.node.id,'column');
-  if(!r){undoStack.pop();updateUndoUI();toast('Столб из этого узла уже существует',{type:'warn'});return}
-  afterChange();toast(`＋ ${r.name} • ${fmt(params.colH)} мм`,{type:'ok',timeout:1400})}
- else{const t=postTarget(n);
+ const t=postTarget(n);
   if(!t){undoStack.pop();updateUndoUI();toast('Выше узла нет пересечения со стержнем',{type:'warn'});return}
   const res=nodeOnRod(t.rod,t.t);const r=addRod(n.id,res.node.id,'post');
   if(!r){undoStack.pop();updateUndoUI();toast('Стойка уже существует',{type:'warn'});return}
-  afterChange();toast(`＋ ${r.name} → пересечение с ${t.rod.name} (z=${fmt(t.z)})`,{type:'ok'})}}
+  afterChange();toast(`＋ ${r.name} → пересечение с ${t.rod.name} (z=${fmt(t.z)})`,{type:'ok'})}
 function clickRodTool({cx,cy,g}){let target=null;
  if(mode==='plan'){const s=snapPlan(cx,cy);if(!s)return;
   if(s.node)target=s.node;
