@@ -1,23 +1,26 @@
 /* ==================== TREE: model tree panel render + interactions ==================== */
 'use strict';
-/* ================= UI RENDER ================= */
+/* ---- row builders ---- */
+function treeEyeBtn(k,id){return `<button class="eye" data-eye="${k}${id}"><i>${M.hidden.has(k+id)?ICONS.eyeoff:ICONS.eye}</i></button>`}
+function treeItemRow(k,id,color,nm,sub){const hid=M.hidden.has(k+id);const s=sel[k+'s'].has(id);
+ return`<div class="titem${s?' sel':''}${hid?' hid':''}" data-el="${k}:${id}"><span class="dot" style="background:${color};color:${color}"></span><span class="nm">${esc(nm)}</span><span class="sub">${esc(sub)}</span>${treeEyeBtn(k,id)}</div>`}
+function treeSection(title,cnt,inner,open=true){return cnt?`<details class="tsec"${open?' open':''}><summary>${title}<span class="cnt">${cnt}</span></summary>${inner}</details>`:''}
+function treePlaneRow(p){return `<div class="titem${sel.planes.has(p.id)?' sel':''}" data-el="plane:${p.id}"><span class="dot" style="background:#6fd3ff;color:#6fd3ff"></span><span class="nm">${esc(p.name)}</span><span class="sub">3 узла</span><button class="eye" data-open-plane="${p.id}"><i>${ICONS.edit}</i></button></div>`}
+function treeGroupRow(g){return `<div class="titem" data-group="${g.id}"><span class="dot" style="background:#ffb020;color:#ffb020"></span><span class="nm">${esc(g.name)}</span><span class="sub">${g.nodes.length} узл • ${g.rods.length} ст</span><button class="eye" data-ungroup="${g.id}"><i>${ICONS.close}</i></button></div>`}
+function treeMeasureRow(m,i){return `<div class="titem" data-meas="${i}"><span class="dot" style="background:#ffc53d;color:#ffc53d"></span><span class="nm">Размер ${i+1}</span><span class="sub">${fmt(m.a.distanceTo(m.b))} мм</span></div>`}
 function renderTree(){const q=($('#treeSearch').value||'').toLowerCase();const list=$('#treeList');
- const eye=(k,id)=>`<button class="eye" data-eye="${k}${id}"><i>${M.hidden.has(k+id)?ICONS.eyeoff:ICONS.eye}</i></button>`;
- const item=(k,id,color,nm,sub)=>{const hid=M.hidden.has(k+id);const s=sel[k+'s'].has(id);
-  return`<div class="titem${s?' sel':''}${hid?' hid':''}" data-el="${k}:${id}"><span class="dot" style="background:${color};color:${color}"></span><span class="nm">${esc(nm)}</span><span class="sub">${esc(sub)}</span>${eye(k,id)}</div>`};
  const match=s=>!q||s.toLowerCase().includes(q);
  const sup=nodeArr().filter(n=>n.type==='support'&&match(n.name));
  const nod=nodeArr().filter(n=>n.type==='node'&&match(n.name));
  let rods=[...M.rods.values()].filter(r=>match(r.name)||match(TYPES[r.type].label));
  rods.sort($('#treeSort').value==='len'?(a,b)=>rodLen(b)-rodLen(a):(a,b)=>a.name.localeCompare(b.name,'ru',{numeric:true}));
- const sec=(title,cnt,inner,open=true)=>cnt?`<details class="tsec"${open?' open':''}><summary>${title}<span class="cnt">${cnt}</span></summary>${inner}</details>`:'';
  list.innerHTML=
-  sec('ОПОРЫ',sup.length,sup.map(n=>item('node',n.id,cssColor(SUP_COLOR),n.name,`${fmt(n.p.x)}; ${fmt(n.p.y)}`)).join(''))+
-  sec('УЗЛЫ',nod.length,nod.map(n=>item('node',n.id,cssColor(NODE_COLOR),n.name,n.host?`на ${M.rods.get(n.host.rod)?.name||'?'} • ${Math.round(n.host.t*100)}%`:`${fmt(n.p.x)}; ${fmt(n.p.y)}; ${fmt(n.p.z)}`)).join(''),nod.length<25)+
-  sec('СТЕРЖНИ',rods.length,rods.map(r=>item('rod',r.id,cssColor(TYPES[r.type].color),r.name,`${TYPES[r.type].label} • L=${fmt(rodLen(r))}`)).join(''),rods.length<25)+
-  sec('ПЛОСКОСТИ',M.planes.size,[...M.planes.values()].filter(p=>match(p.name)).map(p=>`<div class="titem${sel.planes.has(p.id)?' sel':''}" data-el="plane:${p.id}"><span class="dot" style="background:#6fd3ff;color:#6fd3ff"></span><span class="nm">${esc(p.name)}</span><span class="sub">3 узла</span><button class="eye" data-open-plane="${p.id}"><i>${ICONS.edit}</i></button></div>`).join(''))+
-  sec('ГРУППЫ',M.groups.size,[...M.groups.values()].map(g=>`<div class="titem" data-group="${g.id}"><span class="dot" style="background:#ffb020;color:#ffb020"></span><span class="nm">${esc(g.name)}</span><span class="sub">${g.nodes.length} узл • ${g.rods.length} ст</span><button class="eye" data-ungroup="${g.id}"><i>${ICONS.close}</i></button></div>`).join(''))+
-  sec('ИЗМЕРЕНИЯ',M.measures.length,M.measures.map((m,i)=>`<div class="titem" data-meas="${i}"><span class="dot" style="background:#ffc53d;color:#ffc53d"></span><span class="nm">Размер ${i+1}</span><span class="sub">${fmt(m.a.distanceTo(m.b))} мм</span></div>`).join(''));
+  treeSection('ОПОРЫ',sup.length,sup.map(n=>treeItemRow('node',n.id,cssColor(SUP_COLOR),n.name,`${fmt(n.p.x)}; ${fmt(n.p.y)}`)).join(''))+
+  treeSection('УЗЛЫ',nod.length,nod.map(n=>treeItemRow('node',n.id,cssColor(NODE_COLOR),n.name,n.host?`на ${M.rods.get(n.host.rod)?.name||'?'} • ${Math.round(n.host.t*100)}%`:`${fmt(n.p.x)}; ${fmt(n.p.y)}; ${fmt(n.p.z)}`)).join(''),nod.length<25)+
+  treeSection('СТЕРЖНИ',rods.length,rods.map(r=>treeItemRow('rod',r.id,cssColor(TYPES[r.type].color),r.name,`${TYPES[r.type].label} • L=${fmt(rodLen(r))}`)).join(''),rods.length<25)+
+  treeSection('ПЛОСКОСТИ',M.planes.size,[...M.planes.values()].filter(p=>match(p.name)).map(treePlaneRow).join(''))+
+  treeSection('ГРУППЫ',M.groups.size,[...M.groups.values()].map(treeGroupRow).join(''))+
+  treeSection('ИЗМЕРЕНИЯ',M.measures.length,M.measures.map(treeMeasureRow).join(''));
  if(!list.innerHTML)list.innerHTML='<p style="color:var(--dim);font-size:11px;padding:10px">Модель пуста. Поставьте опоры или загрузите демо.</p>'}
 function markTreeSel(){$$('#treeList .titem[data-el]').forEach(el=>{const[k,id]=el.dataset.el.split(':');el.classList.toggle('sel',sel[k+'s'].has(+id))})}
 $('#paneTree').addEventListener('click',e=>{const eye=e.target.closest('[data-eye]');
