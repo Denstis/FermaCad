@@ -163,7 +163,8 @@ function solveFrame(){
 /* ---------- drawing ---------- */
 function calcGroup(){if(!window._gCalc){window._gCalc=new THREE.Group();scene.add(window._gCalc)}return window._gCalc}
 function nodeMatHeat(col){return matFor('nhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
-function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=null;if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
+function rodMatHeat(col){return matFor('rhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
+function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=calc._rodCol=null;if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
 function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
  const g=calcGroup(),show=calc.show;
  const valOf=(rr,i)=>show==='n'?rr.Ns[i]:show==='m'?rr.Ms[i]/1e6:show==='defl'?rr.defl:rr.URs[i];
@@ -184,6 +185,15 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
    arr.push(na.p.clone().lerp(nb.p,i/8),na.p.clone().lerp(nb.p,(i+1)/8));
    buckets.set(col.getHexString(),arr)}});
  buckets.forEach((pts,hex)=>g.add(lines(pts,'#'+hex,1,true,false,true)));
+ // rod body heat colors (cylinders): worst segment per rod
+ calc._rodCol=new Map();
+ M.rods.forEach(rd=>{const rr=calc.byId.get(rd.id);if(!rr)return;let col;
+  if(show==='n'){let bv=0;for(let i=0;i<8;i++){const v=(rr.Ns[i]+rr.Ns[i+1])/2;if(Math.abs(v)>Math.abs(bv))bv=v}
+   const t=clamp(Math.abs(bv)/scale,.12,1);col=bv<0?heatColor(.62+.38*t):new THREE.Color(.15+.5*t,.45+.3*t,.3+.7*t)}
+  else if(show==='m')col=heatColor(clamp(Math.abs(rr.Mmax/1e6)/scale,.08,1));
+  else if(show==='defl')col=heatColor(clamp(rr.defl/scale,.08,1));
+  else col=heatColor(clamp(rr.ur/scale,.08,1));
+  calc._rodCol.set(rd.id,col)});
  // node heat colors: max end value of attached rods (disp for defl)
  calc._nodeCol=new Map();
  M.nodes.forEach(nd=>{let col;

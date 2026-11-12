@@ -87,7 +87,8 @@ function applySelMats(){nodeObjs.forEach((o,id)=>{if(o.ghost)return;const n=M.no
   o.parts.forEach(p=>p.material=hc?nodeMatHeat(hc):nodeMat(n.type,st))});
  rodObjs.forEach((o,id)=>{if(o.ghost)return;const r=M.rods.get(id);if(!r)return;
   const st=sel.rods.has(id)?'sel':(hover.kind==='rod'&&hover.id===id?'hov':'base');
-  o.segs.forEach(s=>s.material=rodMat(r.type,st))});
+  const hc=(st==='base'&&calc._rodCol&&appMode==='loads')?calc._rodCol.get(id):null;
+  o.segs.forEach(s=>s.material=hc?rodMatHeat(hc):rodMat(r.type,st))});
  planeObjs.forEach((o,id)=>{o.border.material.color=linColor(sel.planes.has(id)?0xffb020:0x6fd3ff)})}
 function updateSelBox(){const box=new THREE.Box3();let any=false;
  sel.nodes.forEach(id=>{const n=M.nodes.get(id);if(n){box.expandByPoint(n.p);any=true}});
