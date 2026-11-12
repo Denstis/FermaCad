@@ -3,9 +3,23 @@
 /* ================= MODEL OPS ================= */
 function nodeArr(){return[...M.nodes.values()]}
 function rodLen(r){const a=M.nodes.get(r.a),b=M.nodes.get(r.b);return a&&b?a.p.distanceTo(b.p):0}
-function hostedNodes(rodId){return nodeArr().filter(n=>n.host&&n.host.rod===rodId).sort((x,y)=>x.host.t-y.host.t)}
+function hostedNodes(rodId){return nodeArr().filter(n=>(n.host&&n.host.rod===rodId)||(n.hosts&&n.hosts.some(h=>h.rod===rodId))).sort((x,y)=>hostT(x,rodId)-hostT(y,rodId))}
+function hostT(n,rodId){if(n.host&&n.host.rod===rodId)return n.host.t;const h=n.hosts&&n.hosts.find(h=>h.rod===rodId);return h?h.t:1e9}
 function attachedRods(nodeId){return[...M.rods.values()].filter(r=>r.a===nodeId||r.b===nodeId)}
 function findNodeAt(p,tol=.5){for(const n of M.nodes.values())if(n.p.distanceTo(p)<tol)return n;return null}
+/* ---- shared hosting: a node can be hosted (nested) by several rods; primary host = n.host ---- */
+const HOST_TOL=()=>Math.max((params.nodeR||60)*1.5,60);
+function rodHostAt(r,p){const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;const ab=b.clone().sub(a);const L2=ab.lengthSq();if(L2<1)return null;
+ const t=ab.dot(p.clone().sub(a))/L2;if(t<.002||t>.998)return null;
+ const q=a.clone().addScaledVector(ab,t);if(p.distanceTo(q)>HOST_TOL())return null;return{t,q}}
+function hostNodeOn(n,r){const f=rodHostAt(r,n.p);if(!f)return false;n.hosts=n.hosts||[];
+ const ex=n.hosts.find(h=>h.rod===r.id);if(ex){ex.t=f.t;return false}
+ n.hosts.push({rod:r.id,t:f.t});if(!n.host)n.host={rod:r.id,t:f.t};return true}
+function attachNodesOnRod(r){let c=0;for(const n of M.nodes.values()){if(n.id===r.a||n.id===r.b)continue;if(hostNodeOn(n,r))c++}return c}
+function attachNodeToRods(n){for(const r of M.rods.values()){if(r.a===n.id||r.b===n.id)continue;hostNodeOn(n,r)}}
+function refreshHosts(n){if(!n.hosts||!n.hosts.length){n.host=null;return}
+ n.hosts=n.hosts.filter(h=>{const r=M.rods.get(h.rod);if(!r)return false;if(n.host&&h.rod===n.host.rod){const f=rodHostAt(r,n.p);if(f)h.t=f.t;return !!f}const f=rodHostAt(r,n.p);if(!f)return false;h.t=f.t;return true});
+ if(n.host&&!n.hosts.some(h=>h.rod===n.host.rod))n.host=n.hosts.length?{rod:n.hosts[0].rod,t:n.hosts[0].t}:null}
 function getOrCreateNode(p,type='node',host=null){const ex=findNodeAt(p);
  if(ex){if(type==='support'&&ex.type!=='support'){ex.type='support';ex.name='Опора-'+(++M.counters.o)}return{node:ex,created:false}}
  const id=uid();const n={id,p:p.clone(),type,host,name:type==='support'?'Опора-'+(++M.counters.o):'Узел-'+(++M.counters.n)};
@@ -15,9 +29,9 @@ function addRod(aId,bId,type){if(aId===bId)return null;
  const id=uid();const r={id,a:aId,b:bId,type,name:TYPES[type].prefix+'-'+(++M.counters.r)};M.rods.set(id,r);return r}
 function nodeOnRod(rod,t){t=clamp(t,0,1);const a=M.nodes.get(rod.a).p,b=M.nodes.get(rod.b).p;const p=a.clone().lerp(b,t);
  if(t<1e-4)return{node:M.nodes.get(rod.a),created:false};if(t>1-1e-4)return{node:M.nodes.get(rod.b),created:false};
- for(const n of hostedNodes(rod.id))if(Math.abs(n.host.t-t)<1e-4)return{node:n,created:false};
- const ex=findNodeAt(p,1);if(ex)return{node:ex,created:false};
- const id=uid();const n={id,p,type:'node',host:{rod:rod.id,t},name:'Узел-'+(++M.counters.n)};M.nodes.set(id,n);bornIds.add(n.id);return{node:n,created:true}}
+ for(const n of hostedNodes(rod.id))if(Math.abs(hostT(n,rod.id)-t)<1e-4)return{node:n,created:false};
+ const ex=findNodeAt(p,1);if(ex){hostNodeOn(ex,rod);return{node:ex,created:false}}
+ const id=uid();const n={id,p,type:'node',host:{rod:rod.id,t},hosts:[{rod:rod.id,t}],name:'Узел-'+(++M.counters.n)};M.nodes.set(id,n);bornIds.add(n.id);return{node:n,created:true}}
 function postTarget(node){let best=null;
  for(const r of M.rods.values()){if(M.hidden.has('r'+r.id))continue;const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;
   const dx=b.x-a.x,dy=b.y-a.y;if(Math.abs(dx)<1e-6&&Math.abs(dy)<1e-6)continue;
@@ -30,8 +44,14 @@ function postTarget(node){let best=null;
 function deleteSets(seedN,seedR){const dn=new Set(seedN),dr=new Set(seedR);let grew=true;
  while(grew){grew=false;
   for(const r of M.rods.values()){if(dr.has(r.id))continue;if(dn.has(r.a)||dn.has(r.b)){dr.add(r.id);grew=true}}
-  for(const n of M.nodes.values()){if(dn.has(n.id))continue;if(n.host&&dr.has(n.host.rod)){dn.add(n.id);grew=true}}}
+  for(const n of M.nodes.values()){if(dn.has(n.id))continue;
+   const hs=(n.hosts||[]).map(h=>h.rod).concat(n.host&&!(n.hosts||[]).some(h=>h.rod===n.host.rod)?[n.host.rod]:[],attachedRods(n.id).map(r=>r.id));
+   const uniq=[...new Set(hs)];
+   if(uniq.length&&uniq.every(id=>dr.has(id))){dn.add(n.id);grew=true}}}
  dn.forEach(id=>M.nodes.delete(id));dr.forEach(id=>M.rods.delete(id));
+ for(const n of M.nodes.values()){
+  if(n.hosts){n.hosts=n.hosts.filter(h=>M.rods.has(h.rod));if(!n.hosts.length)n.hosts=null}
+  if(n.host&&(!M.rods.has(n.host.rod)||(n.hosts&&!n.hosts.some(h=>h.rod===n.host.rod))))n.host=n.hosts?{rod:n.hosts[0].rod,t:n.hosts[0].t}:null}
  for(const[id,p]of[...M.planes])if(p.nodes.some(n=>!M.nodes.has(n)))M.planes.delete(id);
  for(const g of M.groups.values()){g.nodes=g.nodes.filter(id=>M.nodes.has(id));g.rods=g.rods.filter(id=>M.rods.has(id))}
  sel.nodes.forEach(id=>{if(!M.nodes.has(id))sel.nodes.delete(id)});sel.rods.forEach(id=>{if(!M.rods.has(id))sel.rods.delete(id)});sel.planes.forEach(id=>{if(!M.planes.has(id))sel.planes.delete(id)});
@@ -44,8 +64,10 @@ function deleteSelection(){if(!selCount())return;pushUndo();
  toast(`Удалено: узлов ${c.n}, стержней ${c.r}`,{type:'warn',action:{label:'Отменить',fn:undo}})}
 function moveNodeTo(n,p){if(n.host){const r=M.rods.get(n.host.rod);if(r){const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;
   const u=b.clone().sub(a);const L=u.length();u.normalize();n.host.t=clamp(p.clone().sub(a).dot(u)/L,0,1);n.p.copy(a).addScaledVector(u,n.host.t*L)}else n.p.copy(p)}
- else{n.p.copy(p);for(const r of attachedRods(n.id))for(const h of hostedNodes(r.id)){const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;h.p.copy(a).lerp(b,h.host.t)}}}
+ else{n.p.copy(p);for(const r of attachedRods(n.id))for(const h of hostedNodes(r.id)){const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;h.p.copy(a).lerp(b,hostT(h,r.id))}}
+ refreshHosts(n)}
 function refreshAfterMove(n){refreshNodePos(n.id);for(const r of attachedRods(n.id)){refreshRodGeom(r.id);for(const h of hostedNodes(r.id))refreshNodePos(h.id)}
+ for(const h of (n.hosts||[])){const r=M.rods.get(h.rod);if(r)refreshRodGeom(r.id)}
  updateSelBox();dimsDirty=true;shadowsDirty=true}
 function planeBasis(ids){const A=M.nodes.get(ids[0]),B=M.nodes.get(ids[1]),C=M.nodes.get(ids[2]);if(!A||!B||!C)return null;
  const u=B.p.clone().sub(A.p);const w=C.p.clone().sub(A.p);const n=u.clone().cross(w);if(n.length()<1)return null;
@@ -74,6 +96,8 @@ function cloneSelection(axis,step,count){const{ns,rs}=gatherSelection();if(!ns.s
  for(let i=1;i<=count;i++){const map=new Map();const o=off.clone().multiplyScalar(i);
   ns.forEach(id=>{const n=M.nodes.get(id);const{node}=getOrCreateNode(n.p.clone().add(o),n.type);map.set(id,node.id);newN.add(node.id)});
   rs.forEach(id=>{const r=M.rods.get(id);const nr=addRod(map.get(r.a),map.get(r.b),r.type);if(nr)newR.add(nr.id)})}
+ for(const id of newR){const r=M.rods.get(id);if(r)attachNodesOnRod(r)}
+ for(const id of newN){const n=M.nodes.get(id);if(n)attachNodeToRods(n)}
  sel.nodes=newN;sel.rods=newR;sel.planes.clear();afterChange();
  toast(`Клонировано: +${newN.size} узлов, +${newR.size} стержней (шаг ${fmt(step)} по ${axis.toUpperCase()})`,{type:'ok'})}
 function copySelection(){const{ns,rs}=gatherSelection();if(!ns.size){toast('Нечего копировать',{type:'warn'});return}
@@ -86,6 +110,8 @@ function startPaste(){if(!clipboard||!clipboard.nodes.length){toast('Буфер 
 function commitPaste(p){pushUndo();const ids=[];const newN=new Set(),newR=new Set();
  paste.nodes.forEach(n=>{const{node}=getOrCreateNode(V3(...n.p).add(p),n.type);ids.push(node.id);newN.add(node.id)});
  paste.rods.forEach(r=>{const nr=addRod(ids[r.a],ids[r.b],r.type);if(nr)newR.add(nr.id)});
+ for(const id of newR)attachNodesOnRod(M.rods.get(id));
+ for(const id of newN)attachNodeToRods(M.nodes.get(id));
  paste=null;sel.nodes=newN;sel.rods=newR;sel.planes.clear();afterChange();toast('Вставлено',{type:'ok'})}
 function groupSelection(name){const{ns,rs}=gatherSelection();if(!ns.size&&!rs.size)return;
  pushUndo();const id=uid();M.groups.set(id,{id,name:name||'Группа-'+(++M.counters.g),nodes:[...ns],rods:[...rs]});afterChange();toast(`Группа «${name}» создана`,{type:'ok'})}
@@ -93,5 +119,5 @@ function splitRod(rod,n){n=clamp(Math.round(n),2,60);pushUndo();let c=0;
  for(let i=1;i<n;i++)if(nodeOnRod(rod,i/n).created)c++;
  afterChange();toast(`Добавлено узлов: ${c} (деление на ${n})`,{type:'ok'})}
 function clearOrphans(){pushUndo();let c=0;
- for(const n of[...M.nodes.values()])if(n.type==='node'&&!attachedRods(n.id).length){M.nodes.delete(n.id);sel.nodes.delete(n.id);c++}
+ for(const n of[...M.nodes.values()])if(n.type==='node'&&!attachedRods(n.id).length&&!(n.hosts&&n.hosts.length)&&!n.host){M.nodes.delete(n.id);sel.nodes.delete(n.id);c++}
  afterChange();toast(c?`Удалено одиночных узлов: ${c}`:'Одиночных узлов нет',{type:c?'ok':'info'})}

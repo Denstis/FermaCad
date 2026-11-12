@@ -31,7 +31,8 @@ function buildDemo(){M=freshModel();M.name='Демо • Ангар 12×6 м';
  const trusses=[demoTrussFrame(0),demoTrussFrame(6000)];
  demoPurlins();
  demoBraces();
- makePlane([at(0,0,0).id,at(12000,0,0).id,at(6000,0,4500).id])}
+ makePlane([at(0,0,0).id,at(12000,0,0).id,at(6000,0,4500).id]);
+ M.rods.forEach(r=>attachNodesOnRod(r))}
 function loadDemo(){const go=()=>{pushUndo();buildDemo();M.rods.forEach(r=>{r.sec=SEC_DEFAULTS[r.type]||'shs_80x80x4';r.mat='mat_s245'});mode='3d';ever3d=true;planCtx={kind:'xy'};
  scene.fog=new THREE.Fog(linColor(0x0a1322),60000,240000);
  rebuildGrid();setTool('select');afterChange();

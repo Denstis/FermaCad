@@ -31,15 +31,18 @@ function clickSupport({cx,cy,g}){
  const s=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,0,false);if(!s)return;
  g.pushOnce();const{node,created}=getOrCreateNode(V3(s.p.x,s.p.y,0),'support');
  if(!created&&node.type==='support'){toast('Здесь уже есть опора',{type:'info',timeout:1500});undoStack.pop();updateUndoUI();return}
+ attachNodeToRods(node);
  afterChange()}
 function clickNode({cx,cy,g}){
  if(mode==='plan'&&planCtx.kind==='rod'){const s=snapPlan(cx,cy);if(!s)return;
   g.pushOnce();const r=M.rods.get(planCtx.rodId);const res=nodeOnRod(r,s.rodT??s.a/rodLen(r));
   if(!res.created){toast('Узел здесь уже существует',{type:'info',timeout:1500});undoStack.pop();updateUndoUI();return}
-  afterChange();return}
+  attachNodeToRods(res.node);afterChange();return}
  const s=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,0,true);if(!s)return;g.pushOnce();
- if(s.type==='rod'){const res=nodeOnRod(s.rod,s.t);if(!res.created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}}
- else{const{created}=getOrCreateNode(mode==='plan'?s.p:V3(s.p.x,s.p.y,s.p.z));if(!created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}}
+ if(s.type==='rod'){const res=nodeOnRod(s.rod,s.t);if(!res.created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}
+  attachNodeToRods(res.node)}
+ else{const{created,node}=getOrCreateNode(mode==='plan'?s.p:V3(s.p.x,s.p.y,s.p.z));if(!created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}
+  attachNodeToRods(node)}
  afterChange()}
 function clickColumnPost({cx,cy,g}){
  const plan=(mode==='plan');
@@ -66,6 +69,7 @@ function clickColumnPost({cx,cy,g}){
  const top=getOrCreateNode(topP);
  const r=addRod(base.id,top.node.id,'column');
  if(!r){undoStack.pop();updateUndoUI();toast('Столб из этого узла уже существует',{type:'warn'});return}
+ attachNodesOnRod(r);
  afterChange();toast(`＋ ${r.name} • h=${fmt(params.colH)} мм`,{type:'ok',timeout:1400})}
 function clickRodTool({cx,cy,g}){let target=null;
  if(mode==='plan'){const s=snapPlan(cx,cy);if(!s)return;
@@ -80,7 +84,9 @@ function clickRodTool({cx,cy,g}){let target=null;
  if(target.id===chain.a.id)return;
  g.pushOnce();const r=addRod(chain.a.id,target.id,tool);
  if(!r){toast('Стержень между этими узлами уже есть',{type:'warn',timeout:1800});if(g.did)afterChange();return}
- chain.a=target;buildWorkGrid();afterChange()}
+ const att=attachNodesOnRod(r);
+ chain.a=target;buildWorkGrid();afterChange();
+ if(att)toast(`В стержень вложено узлов: ${att}`,{type:'info',timeout:1400})}
 function clickPlane({hit,g}){
  if(!hit||hit.kind!=='node'){toast('Кликните по узлу',{type:'warn',timeout:1500});return}
  if(planePick.includes(hit.id))return;planePick.push(hit.id);

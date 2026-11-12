@@ -2,10 +2,10 @@
 'use strict';
 /* ---- card builders: one per selection shape ---- */
 function cardPaste(){return `<div class="hint"><b>РЕЖИМ ВСТАВКИ</b><br>Кликните точку размещения копии. Esc — отмена.</div>`}
-function cardNode(n1){const hosted=n1.host&&M.rods.get(n1.host.rod);
+function cardNode(n1){const hosted=n1.host&&M.rods.get(n1.host.rod);const shared=n1.hosts&&n1.hosts.length>1?n1.hosts.map(h=>M.rods.get(h.rod)?.name).filter(Boolean).join(', '):'';
  return `<div class="card"><h4><span class="sw" style="background:${cssColor(n1.type==='support'?SUP_COLOR:NODE_COLOR)};color:${cssColor(n1.type==='support'?SUP_COLOR:NODE_COLOR)}"></span>${n1.type==='support'?'ОПОРА':'УЗЕЛ'}</h4>
   <div class="row"><label>Имя</label><input data-k="nodeName" value="${esc(n1.name)}"></div>
-  ${hosted?`<div class="hint">Лежит на оси <b>${esc(hosted.name)}</b> (${Math.round(n1.host.t*100)}% длины). Перемещение — только вдоль оси.</div>
+  ${hosted?`<div class="hint">Лежит на оси <b>${esc(hosted.name)}</b> (${Math.round(n1.host.t*100)}% длины). Перемещение — только вдоль оси.</div>${shared?`<div class="hint">Общий узел для стержней: <b>${esc(shared)}</b></div>`:''}
   <div class="row"><label>От начала</label><input type="number" data-k="hostDist" value="${Math.round(n1.host.t*rodLen(hosted))}" step="${params.grid}"><span class="unit">мм</span></div>`
   :`<div class="mini">КООРДИНАТЫ, ММ</div><div class="row3"><input type="number" data-k="x" value="${Math.round(n1.p.x)}" step="100"><input type="number" data-k="y" value="${Math.round(n1.p.y)}" step="100"><input type="number" data-k="z" value="${Math.round(n1.p.z)}" step="100"></div>`}
   <div class="btnrow"><button class="btn" data-act="toSupport">${n1.type==='support'?'Сделать узлом':'Сделать опорой'}</button><button class="btn" data-act="zoomSel">Приблизить</button></div>
@@ -93,8 +93,8 @@ const PROPS_ACTS={
  del:()=>deleteSelection(),
  zoomSel:()=>zoomToSelection(),
  toSupport:({n1})=>{if(n1){pushUndo();if(n1.type==='support'){n1.type='node';n1.name='Узел-'+(++M.counters.n)}else{n1.type='support';n1.name='Опора-'+(++M.counters.o)}afterChange()}},
- mkColumn:({n1})=>{if(n1){pushUndo();const t=getOrCreateNode(n1.p.clone().add(V3(0,0,params.colH)));const r=addRod(n1.id,t.node.id,'column');if(r){afterChange();toast('＋ '+r.name,{type:'ok'})}else{undoStack.pop();updateUndoUI();toast('Столб уже существует',{type:'warn'})}}},
- mkPost:({n1})=>{if(n1){const t=postTarget(n1);if(!t){toast('Нет пересечения выше узла',{type:'warn'});return}pushUndo();const res=nodeOnRod(t.rod,t.t);const r=addRod(n1.id,res.node.id,'post');if(r){afterChange();toast('＋ '+r.name,{type:'ok'})}else{undoStack.pop();updateUndoUI()}}},
+ mkColumn:({n1})=>{if(n1){pushUndo();const t=getOrCreateNode(n1.p.clone().add(V3(0,0,params.colH)));const r=addRod(n1.id,t.node.id,'column');if(r){attachNodesOnRod(r);afterChange();toast('＋ '+r.name,{type:'ok'})}else{undoStack.pop();updateUndoUI();toast('Столб уже существует',{type:'warn'})}}},
+ mkPost:({n1})=>{if(n1){const t=postTarget(n1);if(!t){toast('Нет пересечения выше узла',{type:'warn'});return}pushUndo();const res=nodeOnRod(t.rod,t.t);const r=addRod(n1.id,res.node.id,'post');if(r){attachNodesOnRod(r);afterChange();toast('＋ '+r.name,{type:'ok'})}else{undoStack.pop();updateUndoUI()}}},
  openRod:({r1})=>{if(r1)enterPlanRod(r1.id)},
  openPlane:({p1})=>{if(p1)enterPlanPlane(p1.id)},
  midNode:({r1})=>{if(r1){pushUndo();if(nodeOnRod(r1,.5).created){afterChange();toast('Узел на середине добавлен',{type:'ok'})}else{undoStack.pop();updateUndoUI();toast('Узел уже есть',{type:'info'})}}},
