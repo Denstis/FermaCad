@@ -2,7 +2,7 @@
 'use strict';
 let appMode='model';
 const calc={res:null,byId:new Map(),_u:null,show:'ur',deflScale:80,showDefl:true,factor:1,
- loads:{dead:true,snow:true,wind:true,live:true,snowRegion:3,windRegion:3,terrain:'C',bTrib:3,liveQ:.4}};
+ loads:{dead:true,snow:true,wind:true,live:true,snowRegion:3,windRegion:3,terrain:'C',liveQ:.4}};
 const SG_KPA={1:.5,2:1,3:1.5,4:2,5:2.5,6:3,7:3.5,8:4};
 const W0_KPA={1:.17,2:.25,3:.32,4:.4,5:.48,6:.6,7:.73,8:.9};
 const GF_SNOW={1:1.4,2:1.4,3:1.4,4:1.5,5:1.5,6:1.6,7:1.6,8:1.6};
@@ -12,6 +12,69 @@ function ce(z,t){z=Math.max(z,2);
  if(t==='B')return .65*Math.pow(Math.max(z,5)/5,.5);
  if(t==='D')return .3*Math.pow(Math.max(z,40)/80,.88);
  return .5*Math.pow(z/20,.65)}
+const GVEC={P:p=>[p.x,p.y,p.z],sub:(u,v)=>[u[0]-v[0],u[1]-v[1],u[2]-v[2]],
+ cross:(u,v)=>[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],
+ dot:(u,v)=>u[0]*v[0]+u[1]*v[1]+u[2]*v[2],
+ norm:u=>{const l=Math.hypot(u[0],u[1],u[2]);return l>1e-9?[u[0]/l,u[1]/l,u[2]/l]:null}};
+function slopeFamilies(){const mY=[0,1,0],planes=[],rp=[],out=[];let ridgeZ=-1e9;
+ M.rods.forEach(r=>{const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
+  rp.push([r,GVEC.P(a.p),GVEC.P(b.p)]);ridgeZ=Math.max(ridgeZ,a.p.z,b.p.z)});
+ rp.forEach(([r,a,b])=>{const u=GVEC.norm(GVEC.cross(GVEC.sub(a,b),mY));if(!u)return;
+  if(u[2]<0){u[0]=-u[0];u[1]=-u[1];u[2]=-u[2]}
+  const c=GVEC.dot(u,a);let p=planes.find(q=>GVEC.dot(q.n,u)>0.99995&&Math.abs(q.c-c)<2);
+  if(!p){p={n:u,c,ids:new Set()};planes.push(p)}p.ids.add(r.id)});
+ rp.forEach(([r,a,b])=>{if(GVEC.norm(GVEC.cross(GVEC.sub(a,b),mY)))return;
+  planes.forEach(p=>{if(p.n[2]<0.25)return;
+   const dd=Math.min(Math.abs(GVEC.dot(p.n,a)-p.c),Math.abs(GVEC.dot(p.n,b)-p.c));
+   if(dd<2)p.ids.add(r.id)})});
+ planes.forEach(p=>{if(p.n[2]<0.25)return;
+  if(p.n[2]>0.9999&&p.c<ridgeZ-50)return;
+  const fams=new Map();
+  p.ids.forEach(id=>{const r=M.rods.get(id);if(!r||!(r.type==='top'||r.type==='purlin'))return;
+   const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;
+   let d=GVEC.norm(GVEC.sub(GVEC.P(a),GVEC.P(b)));if(!d)return;
+   if(d[0]<-1e-9||(Math.abs(d[0])<1e-9&&d[1]<0)||(Math.abs(d[0])<1e-9&&Math.abs(d[1])<1e-9&&d[2]<0))d=[-d[0],-d[1],-d[2]];
+   const k=d.map(x=>Math.round(x*1000)).join(',');
+   let f=fams.get(k);if(!f){f={d,rods:[]};fams.set(k,f)}f.rods.push(id)});
+  const sh=GVEC.norm([-p.n[0]*p.n[2],-p.n[1]*p.n[2],1-p.n[2]*p.n[2]]);
+  let skin=null,bc=0,bs=9;
+  fams.forEach(f=>{const sc=sh?Math.abs(GVEC.dot(f.d,sh)):0;
+   if(f.rods.length>=2&&sc<0.25&&f.rods.length>bc){bc=f.rods.length;skin=f}});
+  if(!skin){fams.forEach(f=>{const sc=sh?Math.abs(GVEC.dot(f.d,sh)):0;
+   if(f.rods.length>=2&&sc<bs){bs=sc;skin=f}});
+   if(!skin)return}
+  const v=GVEC.norm(GVEC.cross(p.n,skin.d));if(!v)return;
+  const lines=[];
+  skin.rods.forEach(id=>{const r=M.rods.get(id),a=M.nodes.get(r.a).p,pos=GVEC.dot(v,GVEC.P(a));
+   let L=lines.find(l=>Math.abs(l.pos-pos)<100);
+   if(!L){L={pos,r:[]};lines.push(L)}L.r.push(id)});
+  lines.sort((x,y)=>x.pos-y.pos);
+  lines.forEach((L,i)=>{let bw;
+   if(lines.length===1)bw=6000;
+   else if(i===0)bw=(lines[1].pos-L.pos)/2;
+   else if(i===lines.length-1)bw=(L.pos-lines[i-1].pos)/2;
+   else bw=(lines[i+1].pos-lines[i-1].pos)/2;
+   L.b=Math.max(1,Math.round(bw*p.n[2]))});
+  out.push({n:p.n,mu:snowMu(Math.atan2(Math.hypot(p.n[0],p.n[1]),p.n[2])*180/Math.PI),lines})});
+ return out}
+function framePlanes(){const planes=[];
+ M.rods.forEach(r=>{const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;
+  const u=GVEC.norm(GVEC.cross(GVEC.sub(GVEC.P(a),GVEC.P(b)),[0,1,0]));if(!u)return;
+  if(u[2]>=0.25)return;
+  const c=GVEC.dot(u,GVEC.P(a));let p=planes.find(q=>GVEC.dot(q.n,u)>0.99995&&Math.abs(q.c-c)<2);
+  if(!p){p={n:u,c,ids:new Set()};planes.push(p)}p.ids.add(r.id)});
+ M.rods.forEach(r=>{const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;
+  if(GVEC.norm(GVEC.cross(GVEC.sub(GVEC.P(a),GVEC.P(b)),[0,1,0])))return;
+  planes.forEach(p=>{const dd=Math.min(Math.abs(GVEC.dot(p.n,GVEC.P(a))-p.c),Math.abs(GVEC.dot(p.n,GVEC.P(b))-p.c));
+   if(dd<2)p.ids.add(r.id)})});
+ planes.sort((x,y)=>x.c-y.c);
+ planes.forEach((p,i)=>{p.bw=planes.length===1?1000:
+  i===0?(planes[1].c-planes[0].c)/2:i===planes.length-1?(p.c-planes[i-1].c)/2:(planes[i+1].c-planes[i-1].c)/2;
+  p.bw=Math.max(1,Math.round(p.bw))});
+ return planes}
+function frameBFor(planes){return (a,b)=>{for(const p of planes)
+  if(Math.abs(GVEC.dot(p.n,GVEC.P(a))-p.c)<2&&Math.abs(GVEC.dot(p.n,GVEC.P(b))-p.c)<2)return p.bw;
+  return 1000}}
 function secById(id){return NR_SECTIONS.find(s=>s.id===id)}
 function matById(id){return NR_MATERIALS.find(m=>m.id===id)}
 function rodSec(r){return secById(r.sec)||secById(SEC_DEFAULTS[r.type])||NR_SECTIONS[0]}
@@ -31,9 +94,21 @@ function phiBar(lam,E,Ry){const lb=lam/Math.PI*Math.sqrt(Ry/E);
 function solveFrame(){
  const nodes0=[...M.nodes.values()];if(nodes0.length<2)return{err:'Нет узлов'};
  const isSup=n=>n.type==='support';
+ const hostBy=new Map();
+ nodes0.forEach(n=>{const hl=[];
+  if(n.host&&n.host.rod)hl.push(n.host);
+  (n.hosts||[]).forEach(h=>{if(h&&h.rod&&hl.every(x=>x.rod!==h.rod))hl.push(h)});
+  hl.forEach(h=>{if(!M.rods.has(h.rod))return;let a=hostBy.get(h.rod);if(!a){a=[];hostBy.set(h.rod,a)}a.push({id:n.id,t:h.t})})});
+ const parts=[];
+ for(const r of M.rods.values()){const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)continue;
+  const hs=(hostBy.get(r.id)||[]).filter(h=>h.t>0.002&&h.t<0.998).sort((p,q)=>p.t-q.t);
+  if(!hs.length){parts.push(r);continue}
+  let prev=r.a,prevT=0;
+  hs.forEach((h,k)=>{parts.push({id:r.id+'#'+k,a:prev,b:h.id,sec:r.sec,mat:r.mat,type:r.type,name:r.name+'·'+(k+1),t0:prevT,t1:h.t});prev=h.id;prevT=h.t});
+  parts.push({id:r.id+'#'+hs.length,a:prev,b:r.b,sec:r.sec,mat:r.mat,type:r.type,name:r.name+'·'+(hs.length+1),t0:prevT,t1:1})}
  const adj0=new Map();nodes0.forEach(n=>adj0.set(n.id,new Set()));
- for(const r of M.rods.values()){if(adj0.has(r.a))adj0.get(r.a).add(r.b);if(adj0.has(r.b))adj0.get(r.b).add(r.a)}
- const nodes=nodes0.filter(n=>!n.host&&(isSup(n)||adj0.get(n.id).size>0));
+ for(const r of parts){if(adj0.has(r.a))adj0.get(r.a).add(r.b);if(adj0.has(r.b))adj0.get(r.b).add(r.a)}
+ const nodes=nodes0.filter(n=>isSup(n)||adj0.get(n.id).size>0);
  const mset=new Set(nodes.map(n=>n.id));
  const idx=new Map();nodes.forEach((n,i)=>idx.set(n.id,i));
  const seenC=new Set(),bad=[];
@@ -45,7 +120,7 @@ function solveFrame(){
  nodes.forEach((n,i)=>{if(isSup(n))return;for(let d=0;d<6;d++)fmap.set(i*6+d,nf++)});
  if(nf<6)return{err:'Расставьте опоры (нужно ≥2)'};
  const els=[];
- for(const r of M.rods.values()){
+ for(const r of parts){
   const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)continue;
   if(!mset.has(r.a)||!mset.has(r.b))continue;
   const x=b.p.clone().sub(a.p);const L=x.length();if(L<10)continue;
@@ -77,22 +152,29 @@ function solveFrame(){
  const addLoad=(e,q)=>{e.qv[0]+=q[0];e.qv[1]+=q[1];e.qv[2]+=q[2]};
  let ridgeZ=-1e9;els.forEach(e=>ridgeZ=Math.max(ridgeZ,e.a.p.z,e.b.p.z));
  const nodalF=[];
+ const emap=new Map();els.forEach(e=>{const k=String(e.r.id).split('#')[0];let a=emap.get(k);if(!a){a=[];emap.set(k,a)}a.push(e)});
+ const eL=id=>emap.get(String(id))||[];
+ const sfs=(L2.snow||L2.live||L2.wind)?slopeFamilies():[],fpl=L2.wind?framePlanes():[],fb=L2.wind?frameBFor(fpl):null;
  if(L2.dead)els.forEach(e=>addLoad(e,[0,0,-e.p.mass*9.81/1000*1.05*mult]));
  if(L2.snow){const S=SG_KPA[L2.snowRegion]*1000,gf=GF_SNOW[L2.snowRegion];
-  els.forEach(e=>{if(e.r.type!=='top')return;
-   const Lh=Math.hypot(e.b.p.x-e.a.p.x,e.b.p.y-e.a.p.y),dz=Math.abs(e.b.p.z-e.a.p.z);
-   const mu=snowMu(Math.atan2(dz,Math.max(Lh,1))*180/Math.PI);if(mu<=0)return;
-   addLoad(e,[0,0,-S*mu*gf*mult*L2.bTrib*(Lh/e.L)/1000])})}
+  sfs.forEach(f=>{if(f.mu<=0)return;
+   f.lines.forEach(L=>L.r.forEach(id=>{eL(id).forEach(e=>{
+    const Lh=Math.hypot(e.b.p.x-e.a.p.x,e.b.p.y-e.a.p.y);
+    addLoad(e,[0,0,-S*f.mu*gf*mult*(L.b/1000)*(Lh/e.L)/1000])})}))})}
  if(L2.wind){const w0=W0_KPA[L2.windRegion]*1000*1.4*kT*mult;
   els.forEach(e=>{if(Math.abs(e.a.p.y-e.b.p.y)>1)return;
    const face=Math.abs(e.a.p.y-yMin)<50?1:(Math.abs(e.a.p.y-yMax)<50?.6:0);if(!face)return;
    const dz=Math.abs(e.b.p.z-e.a.p.z);if(!dz)return;
    const zmid=(e.a.p.z+e.b.p.z)/2000;
-   addLoad(e,[w0*ce(zmid,L2.terrain)*face*L2.bTrib*dz/e.L/1000,0,0])})}
+   addLoad(e,[w0*ce(zmid,L2.terrain)*face*fb(e.a.p,e.b.p)*dz/e.L/1e6,0,0])});
+  sfs.forEach(f=>{const cf=f.n[0]<0?0.8:-1.2;
+   f.lines.forEach(L=>L.r.forEach(id=>{eL(id).forEach(e=>{
+    const zmid=(e.a.p.z+e.b.p.z)/2000,w=w0*ce(zmid,L2.terrain)*L.b/1e6;
+    addLoad(e,[-cf*w*f.n[0],0,-cf*w*f.n[2]])})}))})}
  if(L2.live){const q=L2.liveQ*1000*1.2*kT*mult;
-  els.forEach(e=>{if(e.r.type!=='top')return;
+  sfs.forEach(f=>f.lines.forEach(L=>L.r.forEach(id=>{eL(id).forEach(e=>{
    const Lh=Math.hypot(e.b.p.x-e.a.p.x,e.b.p.y-e.a.p.y);
-   addLoad(e,[0,0,-q*(Lh/e.L)*L2.bTrib/1000])});
+   addLoad(e,[0,0,-q*(L.b/1000)*(Lh/e.L)/1000])})})));
   const seen=new Set();
   nodes.forEach(n=>{if(!isSup(n)&&n.p.z>ridgeZ-1&&!seen.has(n.id)){seen.add(n.id);
    const fi=fmap.get(idx.get(n.id)*6+2);if(fi!==undefined)nodalF.push([fi,-1000*1.2*mult*kT])}})}
@@ -136,8 +218,8 @@ function solveFrame(){
    const M2=fe[11]+fe[7]*r2+q2*r2*r2/2;
    const M3=-(fe[10]+fe[8]*r2+q3*r2*r2/2);
    const M=Math.hypot(M2,M3);
-   const nn=Math.max(0,-N)/(phi*p.A*e.Ry),mm=M/(p.Wx*e.Ry);
-   Ns.push(N);Ms.push(M);URs.push(nn+mm*Math.max(0,1-.8*nn))}
+   const nnc=Math.max(0,-N)/(phi*p.A*e.Ry),mst=(Math.abs(M2)/p.Wy+Math.abs(M3)/p.Wx)/e.Ry;
+   Ns.push(N);Ms.push(M);URs.push(N>=0?N/(p.A*e.Ry)+mst:nnc+mst*Math.max(0,1-.8*nnc))}
   const Ncomp=Math.max(0,-Math.min(...Ns)),Nt=Math.max(0,Math.max(...Ns)),Mmax=Math.max(...Ms),ur=Math.max(...URs);
   const M2a=fe[11]+fe[7]*L+q2*L*L/2,M3a=-(fe[10]+fe[8]*L+q3*L*L/2);
   const d2=(M2a+fe[11])*L*L/(16*e.E*p.Iy)+5*q2*L**4/(384*e.E*p.Iy);
@@ -148,7 +230,7 @@ function solveFrame(){
   const nodalD=Math.hypot(um[0]-along*e1v.x,um[1]-along*e1v.y,um[2]-along*e1v.z);
   const defl=Math.hypot(d2,d3)+nodalD;
   res.push({id:e.r.id,name:e.r.name,secName:e.secName,matName:e.matName,secId:e.sec.id,L,
-   Ncomp,Nt,Mmax,ur,defl,Ns,Ms,URs});
+   Ncomp,Nt,Mmax,ur,defl,Ns,Ms,URs,t0:e.r.t0==null?0:e.r.t0,t1:e.r.t1==null?1:e.r.t1});
   if(ur>maxUR){maxUR=ur;urRod=e.r.name}
   if(defl>maxD){maxD=defl;dRod=e.r.name}
   mass+=e.p.mass*L/1000;cost+=(e.sec.price_rub_m||0)*L/1000;
@@ -156,6 +238,29 @@ function solveFrame(){
   for(let i=0;i<12;i++){let v=0;for(let j=0;j<12;j++)v+=e.T[i*12+j]*fe[j];gfe[i]=v}
   [[e.ia,0],[e.ib,6]].forEach(([nd,off])=>{const n=nodes[nd];if(!isSup(n))return;
    const a2=react.get(n.id)||[0,0,0];a2[0]+=gfe[off];a2[1]+=gfe[off+1];a2[2]+=gfe[off+2];react.set(n.id,a2)})});
+ const agg=new Map();
+ res.forEach(rr=>{const k=String(rr.id).split('#')[0];
+  const sm=rr.Ns.map((N,i)=>[rr.t0+(rr.t1-rr.t0)*i/8,N,rr.Ms[i],rr.URs[i]]);
+  let a=agg.get(k);
+  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||{}).name||rr.name},sm};agg.set(k,a)}
+  else{a.sm.push(...sm);const p0=a.row;
+   if(rr.defl>p0.defl)p0.defl=rr.defl;
+   if(rr.Ncomp>p0.Ncomp)p0.Ncomp=rr.Ncomp;
+   if(rr.Nt>p0.Nt)p0.Nt=rr.Nt}});
+ res.length=0;
+ agg.forEach((a,k)=>{const r0=a.row;
+  a.sm.sort((x,y)=>x[0]-y[0]);
+  const at=t=>{const sm=a.sm;if(t<=sm[0][0])return sm[0];
+   for(let i=1;i<sm.length;i++)if(sm[i][0]>=t){const a0=sm[i-1],b0=sm[i],dt=b0[0]-a0[0],f=dt>1e-9?(t-a0[0])/dt:0;
+    return[a0[0],a0[1]+(b0[1]-a0[1])*f,a0[2]+(b0[2]-a0[2])*f,a0[3]+(b0[3]-a0[3])*f]}
+   return sm[sm.length-1]};
+  r0.Ns=[];r0.Ms=[];r0.URs=[];
+  for(let i=0;i<=8;i++){const s=at(i/8);r0.Ns.push(s[1]);r0.Ms.push(s[2]);r0.URs.push(s[3])}
+  r0.ur=Math.max(...a.sm.map(s=>s[3]));r0.Mmax=Math.max(...a.sm.map(s=>s[2]));
+  const rr=M.rods.get(k);if(rr)r0.L=rodLen(rr);
+  res.push(r0)});
+ maxUR=0;urRod='-';maxD=0;dRod='-';
+ res.forEach(rr=>{if(rr.ur>maxUR){maxUR=rr.ur;urRod=rr.name}if(rr.defl>maxD){maxD=rr.defl;dRod=rr.name}});
  const reactArr=[...react.entries()].map(([id,v])=>({id,
   name:(M.nodes.get(id)||{}).name||id,fx:-v[0]/1000,fy:-v[1]/1000,fz:-v[2]/1000,
   F:Math.hypot(v[0],v[1],v[2])/1000})).sort((a,b)=>b.F-a.F);
@@ -247,7 +352,7 @@ function calcPaneHTML(){const l=calc.loads;
  <div class="crow"><label>Ветровой район</label><select id="selWindR">${[1,2,3,4,5,6,7,8].map(i=>opt(i,l.windRegion,i+' — '+W0_KPA[i]+' кПа')).join('')}</select></div>
  <div class="crow"><label>Местность</label><select id="selTerr">${['A','B','C','D'].map(t=>opt(t,l.terrain,t)).join('')}</select></div>
  <label class="ck"><input type="checkbox" id="ckLive" ${l.live?'checked':''}> Эксплуат.: 0.4 кПа + 1 кН в узел</label>
- <div class="crow"><label>Ширина b (шаг ферм), м</label><input type="number" id="inB" value="${l.bTrib}" step=".5" min=".5" max="24"></div>
+ <div class="hint2">Снег/эксплуатация/ветер на кровлю: ширина приведения считается по геометрии — соседние параллельные ряды прогонов (или поясов, если прогонов нет). Ветер на плоскости рам — по шагу соседних рам.</div>
  <div class="crow"><label>Множитель нагрузки <b id="multVal">${calc.factor.toFixed(2)}×</b></label>
   <input type="range" id="rngMult" min="0.25" max="3" step="0.05" value="${calc.factor}"></div>
  <div class="btnrow"><button class="btn gold" id="btnCalc">РАСЧЁТ</button><button class="btn" id="btnCalcClear">СБРОС</button></div>
@@ -269,7 +374,6 @@ function bindCalcPane(){const W=(id,ev,fn)=>{const e=$(id);if(e)e.addEventListen
  W('#selSnowR','change',e=>L.snowRegion=+e.target.value);
  W('#selWindR','change',e=>L.windRegion=+e.target.value);
  W('#selTerr','change',e=>L.terrain=e.target.value);
- W('#inB','change',e=>L.bTrib=clamp(+e.target.value||3,.5,24));
  W('#rngMult','input',e=>{calc.factor=+e.target.value;$('#multVal').textContent=calc.factor.toFixed(2)+'×'});
  W('#btnCalc','click',()=>runCalc());
  W('#btnCalcClear','click',()=>{calc.res=null;clearCalcDraw();$('#calcOut').innerHTML='<div class="hint2">Расчёт сброшен.</div>';toast('Результаты сброшены')});
@@ -326,7 +430,7 @@ function openReportModal(){
  const kinds={};M.rods.forEach(r=>{const s=rodSec(r);kinds[s.name]=(kinds[s.name]||0)+1});
  openModal('ОТЧЁТ ПО КАРКАСУ',
  `<div class="hint2">«${esc($('#projName').value)}» • ${M.nodes.size} узлов / ${M.rods.size} стержней • стержневая КЭ модель (6 DOF/узел) • нагрузки СП 20.13330, проверки СП 16.13330 (упрощённая φ по λ)</div>
- <div class="kv"><span>Нагрузки</span><b>${l.dead?'собств. вес • ':''}${l.snow?'снег р.'+l.snowRegion+' γf='+GF_SNOW[l.snowRegion]+' • ':''}${l.wind?'ветер р.'+l.windRegion+' м.'+l.terrain+' • ':''}${l.live?'эксплуат. 0.4 кПа + 1 кН • ':''}b=${l.bTrib} м • множитель ×${calc.factor}</b></div>
+ <div class="kv"><span>Нагрузки</span><b>${l.dead?'собств. вес • ':''}${l.snow?'снег р.'+l.snowRegion+' γf='+GF_SNOW[l.snowRegion]+' • ':''}${l.wind?'ветер р.'+l.windRegion+' м.'+l.terrain+' • ':''}${l.live?'эксплуат. 0.4 кПа + 1 кН • ':''}множитель ×${calc.factor}</b></div>
  <div class="kv"><span>Итог</span><b style="color:${R.maxUR>1?'#ff7a6a':'#7fe8b8'}">UR max ${R.maxUR.toFixed(2)} (${esc(R.urRod)})${R.maxUR>1?' — ПЕРЕГРУЗ':''} • прогиб max ${R.maxD.toFixed(1)} мм (${esc(R.dRod)})</b></div>
  <div class="kv"><span>Сталь / металл</span><b>${R.mass.toFixed(0)} кг • ${Math.round(R.cost).toLocaleString('ru')} ₽</b></div>
  <div class="psect">НАИБОЛЕЕ ЗАГРУЖЕННЫЕ СТЕРЖНИ</div>
@@ -337,7 +441,7 @@ function openReportModal(){
  ${R.reactArr.map(r=>`<tr><td>${esc(r.name)}</td><td><b>${r.F.toFixed(1)}</b></td><td>${r.fx.toFixed(1)}</td><td>${r.fy.toFixed(1)}</td><td>${r.fz.toFixed(1)}</td></tr>`).join('')}</table>
  <div class="psect">СОСТАВ СЕЧЕНИЙ</div>
  <div class="hint2">${Object.entries(kinds).map(([k,n])=>`${esc(k)} × ${n}`).join(' • ')}</div>
- <div class="hint2">UR = N/(φ·A·Ry) + M·(1−0.8N/(φARy))/(W·Ry). Прогибы — от полной нагрузки без γf-коэффициентов доверия к комбинации (эксплуатационная оценка).</div>`,
+ <div class="hint2">UR: сжатие+изгиб — N/(φ·A·Ry) + (|M₂|/Wy+|M₃|/Wx)·(1−0.8n)/(Ry); растяжение+изгиб — N/(A·Ry) + |M₂|/Wy+|M₃|/Wx)/Ry (φ по λ=min(L/i)). Прогибы — от полной нагрузки без γf (эксплуатационная оценка).</div>`,
  [{label:'Скачать HTML',keep:true,fn:()=>{const body=document.querySelector('#mbody');
    const blob=new Blob(['<meta charset="utf-8"><style>body{font:13px sans-serif;color:#111;background:#fff}table{border-collapse:collapse}td,th{border:1px solid #999;padding:4px 8px}.psect{font-weight:700;margin:12px 0 4px}</style>'+body.innerHTML],{type:'text/html'});
    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='roof-report.html';a.click();toast('Отчёт сохранён',{type:'ok'})}},
