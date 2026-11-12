@@ -162,7 +162,8 @@ function solveFrame(){
  return{res,reactArr,maxUR,urRod,maxD,dRod,mass,cost,u,nodeOrder:nodes.map(n=>n.id)}}
 /* ---------- drawing ---------- */
 function calcGroup(){if(!window._gCalc){window._gCalc=new THREE.Group();scene.add(window._gCalc)}return window._gCalc}
-function clearCalcDraw(){clearGroup(calcGroup());const l=$('#calcLegend');if(l)l.style.display='none'}
+function nodeMatHeat(col){return matFor('nhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
+function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=null;if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
 function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
  const g=calcGroup(),show=calc.show;
  const valOf=(rr,i)=>show==='n'?rr.Ns[i]:show==='m'?rr.Ms[i]/1e6:show==='defl'?rr.defl:rr.URs[i];
@@ -183,6 +184,19 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
    arr.push(na.p.clone().lerp(nb.p,i/8),na.p.clone().lerp(nb.p,(i+1)/8));
    buckets.set(col.getHexString(),arr)}});
  buckets.forEach((pts,hex)=>g.add(lines(pts,'#'+hex,1,true,false,true)));
+ // node heat colors: max end value of attached rods (disp for defl)
+ calc._nodeCol=new Map();
+ M.nodes.forEach(nd=>{let col;
+  if(show==='defl'){const i=nidx.get(nd.id);const d=Math.hypot(R.u[i*6],R.u[i*6+1],R.u[i*6+2]);
+   col=heatColor(clamp(d/scale,.08,1))}
+  else{let bv=0;
+   for(const r of attachedRods(nd.id)){const rr=calc.byId.get(r.id);if(!rr)continue;
+    const v=valOf(rr,r.a===nd.id?0:8);if(Math.abs(v)>Math.abs(bv))bv=v}
+   if(show==='n'){const t=clamp(Math.abs(bv)/scale,.12,1);
+    col=bv<0?heatColor(.62+.38*t):new THREE.Color(.15+.5*t,.45+.3*t,1*(.3+.7*t))}
+   else col=heatColor(clamp(Math.abs(bv)/scale,.08,1))}
+  calc._nodeCol.set(nd.id,col)});
+ applySelMats();
  if(calc.showDefl){const s=calc.deflScale,pts=[];
   M.rods.forEach(rd=>{const d=id=>{const n=M.nodes.get(id),i=nidx.get(id);
     return n.p.clone().add(V3(R.u[i*6]*s,R.u[i*6+1]*s,R.u[i*6+2]*s))};
@@ -257,7 +271,7 @@ function setAppMode(m){appMode=m;
  document.body.classList.toggle('app-loads',m!=='model');
  ['tabModel','tabLoads','tabCut','tabReport'].forEach(id=>{const b=$('#'+id);if(b)b.classList.toggle('on',id==='tab'+m.charAt(0).toUpperCase()+m.slice(1))});
  $('#toolbar').style.display=m==='model'?'':'none';
- if(m==='model'){$('#paneCalc').classList.remove('on');$('#tabCalc').classList.remove('on');$('#tabProps').classList.add('on');$('#paneProps').classList.add('on')}
+ if(m==='model'){$('#paneCalc').classList.remove('on');$('#tabCalc').classList.remove('on');$('#tabProps').classList.add('on');$('#paneProps').classList.add('on');clearCalcDraw&&clearCalcDraw();renderTree&&renderTree()}
  if(m==='loads'){
   if(mode==='plan')exitPlan();
   $('#tabCalc').classList.add('on');

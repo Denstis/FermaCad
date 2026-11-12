@@ -83,7 +83,8 @@ function updateShadowFrustum(){const box=new THREE.Box3();let any=false;
  dirLight.castShadow=params.shadows;ground.visible=params.shadows}
 function applySelMats(){nodeObjs.forEach((o,id)=>{if(o.ghost)return;const n=M.nodes.get(id);if(!n)return;
   const st=sel.nodes.has(id)?'sel':(hover.kind==='node'&&hover.id===id?'hov':'base');
-  o.parts.forEach(p=>p.material=nodeMat(n.type,st))});
+  const hc=(st==='base'&&calc._nodeCol&&appMode==='loads')?calc._nodeCol.get(id):null;
+  o.parts.forEach(p=>p.material=hc?nodeMatHeat(hc):nodeMat(n.type,st))});
  rodObjs.forEach((o,id)=>{if(o.ghost)return;const r=M.rods.get(id);if(!r)return;
   const st=sel.rods.has(id)?'sel':(hover.kind==='rod'&&hover.id===id?'hov':'base');
   o.segs.forEach(s=>s.material=rodMat(r.type,st))});
