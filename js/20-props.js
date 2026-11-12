@@ -12,10 +12,16 @@ function cardNode(n1){const hosted=n1.host&&M.rods.get(n1.host.rod);
   <button class="btn" data-act="mkColumn">Столб ${fmt(params.colH)} мм ⊥ XY</button>
   <button class="btn" data-act="mkPost">Стойка вверх до стержня</button>
   <button class="btn warn" data-act="del">Удалить узел</button></div>`}
-function cardRod(r1){const hn=hostedNodes(r1.id).length;
+function secOptionsHTML(cur){let s='';NR_KINDS.forEach(([k,lbl])=>{const arr=NR_SECTIONS.filter(x=>x.kind===k);if(!arr.length)return;
+ s+=`<optgroup label="${lbl}">`+arr.map(x=>`<option value="${x.id}"${x.id===cur?' selected':''}>${esc(x.name)}</option>`).join('')+`</optgroup>`});return s}
+function cardRod(r1){const hn=hostedNodes(r1.id).length;const S=rodSec(r1),Mt=rodSteel(r1);
  return `<div class="card"><h4><span class="sw" style="background:${cssColor(TYPES[r1.type].color)};color:${cssColor(TYPES[r1.type].color)}"></span>СТЕРЖЕНЬ</h4>
   <div class="row"><label>Имя</label><input data-k="rodName" value="${esc(r1.name)}"></div>
   <div class="row"><label>Тип</label><select data-k="rodType">${ROD_KEYS.map(k=>`<option value="${k}"${k===r1.type?' selected':''}>${TYPES[k].label}</option>`).join('')}</select></div>
+  <div class="row"><label>Сечение</label><select data-k="rodSecSel">${secOptionsHTML(S.id)}</select></div>
+  <div class="row"><label>Материал</label><select data-k="rodMatSel">${NR_MATERIALS.map(m=>`<option value="${m.id}"${m.id===Mt.id?' selected':''}>${esc(m.name)} — Ry ${m.Ry_mpa}</option>`).join('')}</select></div>
+  <div class="kv"><span>Профиль</span><b>${S.mass_kg_m} кг/м • A=${S.A_cm2} см² • Wx=${S.Wx_cm3} см³</b></div>
+  <div class="kv"><span>Металл стержня</span><b>${(S.mass_kg_m*rodLen(r1)/1000).toFixed(1)} кг • ${Math.round((S.price_rub_m||0)*rodLen(r1)/1000).toLocaleString('ru')} ₽</b></div>
   <div class="kv"><span>Длина</span><b>${fmt(rodLen(r1))} мм</b></div>
   <div class="kv"><span>Концы</span><b>${esc(M.nodes.get(r1.a)?.name||'?')} → ${esc(M.nodes.get(r1.b)?.name||'?')}</b></div>
   <div class="kv"><span>Узлов на оси</span><b>${hn} внутр.</b></div>
@@ -32,6 +38,8 @@ function cardPlane(p1){return `<div class="card"><h4><span class="sw" style="bac
 function cardMulti(){return `<div class="card"><h4>ВЫДЕЛЕНО: ${selCount()}</h4>
   <div class="kv"><span>Узлы</span><b>${sel.nodes.size}</b></div><div class="kv"><span>Стержни</span><b>${sel.rods.size}</b></div><div class="kv"><span>Плоскости</span><b>${sel.planes.size}</b></div>
   ${sel.rods.size?`<div class="row" style="margin-top:9px"><label>Тип всем</label><select data-k="bulkType"><option value="">— не менять —</option>${ROD_KEYS.map(k=>`<option value="${k}">${TYPES[k].label}</option>`).join('')}</select></div>`:''}
+  ${sel.rods.size?`<div class="row"><label>Сечение всем</label><select data-k="bulkSec"><option value="">— не менять —</option>${secOptionsHTML('')}</select></div>
+  <div class="row"><label>Материал всем</label><select data-k="bulkMat"><option value="">— не менять —</option>${NR_MATERIALS.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>`:''}
   <button class="btn" data-act="group">Группировать (Ctrl+G)</button>
   <div class="btnrow"><button class="btn" data-act="copy">Копировать</button><button class="btn" data-act="clone">Клонировать…</button></div>
   <div class="btnrow"><button class="btn" data-act="hide">Скрыть</button><button class="btn" data-act="isolate">Изолировать</button></div>
@@ -122,6 +130,10 @@ const PROPS_CHANGE={
  rodName:({v,r1})=>{if(r1){pushUndo();r1.name=v.trim()||r1.name;afterChange()}},
  rodType:({v,r1})=>{if(r1&&TYPES[v]){pushUndo();r1.type=v;afterChange()}},
  bulkType:({v})=>{if(v&&TYPES[v]){pushUndo();sel.rods.forEach(id=>{const r=M.rods.get(id);if(r)r.type=v});afterChange();toast('Тип изменён у '+sel.rods.size+' стержней',{type:'ok'})}},
+ rodSecSel:({v,r1})=>{if(r1&&secById(v)){pushUndo();r1.sec=v;afterChange();toast('Сечение: '+secById(v).name,{type:'ok'})}},
+ rodMatSel:({v,r1})=>{if(r1&&matById(v)){pushUndo();r1.mat=v;afterChange();toast('Материал: '+matById(v).name,{type:'ok'})}},
+ bulkSec:({v})=>{if(v&&secById(v)){pushUndo();sel.rods.forEach(id=>{const r=M.rods.get(id);if(r)r.sec=v});afterChange();toast('Сечение «'+secById(v).name+'» → '+sel.rods.size+' стержней',{type:'ok'})}},
+ bulkMat:({v})=>{if(v&&matById(v)){pushUndo();sel.rods.forEach(id=>{const r=M.rods.get(id);if(r)r.mat=v});afterChange();toast('Материал → '+sel.rods.size+' стержней',{type:'ok'})}},
  planeName:({v,p1})=>{if(p1){pushUndo();p1.name=v.trim()||p1.name;afterChange()}},
  colH:({v})=>{params.colH=Math.max(100,parseFloat(v)||2500);syncParams();saveParams();updateHint()}};
 $('#paneProps').addEventListener('change',e=>{const k=e.target.dataset.k;if(!k)return;

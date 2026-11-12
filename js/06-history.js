@@ -3,7 +3,7 @@
 /* ================= SERIALIZE / UNDO ================= */
 function serialize(){return{v:1,name:M.name,counters:M.counters,
  nodes:nodeArr().map(n=>({id:n.id,p:n.p.toArray(),type:n.type,host:n.host,name:n.name})),
- rods:[...M.rods.values()].map(r=>({id:r.id,a:r.a,b:r.b,type:r.type,name:r.name})),
+ rods:[...M.rods.values()].map(r=>({id:r.id,a:r.a,b:r.b,type:r.type,name:r.name,sec:r.sec||null,mat:r.mat||null})),
  planes:[...M.planes.values()].map(p=>({id:p.id,nodes:p.nodes,name:p.name,poly:p.poly})),
  groups:[...M.groups.values()].map(g=>({...g})),hidden:[...M.hidden],measures:M.measures.map(m=>({a:m.a.toArray(),b:m.b.toArray()})),views:M.views.map(v=>({...v}))}}
 function deserialize(d){M=freshModel();M.name=d.name||'Проект';Object.assign(M.counters,d.counters||{});
@@ -19,4 +19,5 @@ function undo(){if(!undoStack.length)return;redoStack.push(serialize());deserial
 function redo(){if(!redoStack.length)return;undoStack.push(serialize());deserialize(redoStack.pop());afterChange(true);updateUndoUI();toast('Повторено',{type:'info',timeout:1200})}
 function updateUndoUI(){$('#btnUndo').disabled=!undoStack.length;$('#btnRedo').disabled=!redoStack.length}
 const scheduleAuto=debounce(()=>{try{localStorage.setItem('fc.auto',JSON.stringify({data:serialize(),mode,ts:Date.now()}))}catch(e){}},900);
-function afterChange(skipProps){rebuildScene();renderTree();renderProps();updateCounts();updateModeUI();coachUpdate();scheduleAuto();updateHint();updateToolAvail&&updateToolAvail()}
+function afterChange(skipProps){rebuildScene();renderTree();renderProps();updateCounts();updateModeUI();coachUpdate();scheduleAuto();updateHint();updateToolAvail&&updateToolAvail();
+ if(window.calc&&calc.res){calc.res=null;clearCalcDraw&&clearCalcDraw()}}

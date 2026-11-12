@@ -45,7 +45,8 @@ function bindPointer(){const cv=renderer.domElement;
   if(h.kind==='rod')enterPlanRod(h.id);else if(h.kind==='plane')enterPlanPlane(h.id);
   else if(h.kind==='node'){selectOnly('node',h.id);zoomToSelection()}});
  cv.addEventListener('pointerleave',e=>{touches.delete(e.pointerId);if(!ptr.down){$('#badge').style.display='none';hover={kind:null,id:null};applySelMats();clearGhost()}})}
-function beginDrag(e){if(ptr.btn===1){ptr.mode='pan';return}
+function beginDrag(e){if(appMode!=='model'){ptr.mode=mode==='plan'?'pan':'orbit';return}
+ if(ptr.btn===1){ptr.mode='pan';return}
  if(ptr.btn===2){ptr.mode=(mode==='plan'||e.ctrlKey||e.metaKey)?'pan':'orbit';return}
  if(paste){ptr.mode=mode==='plan'?'pan':'orbit';return}
  if(tool==='select'&&ptr.hit&&ptr.hit.kind==='node'){ptr.mode='node';draggingNode=ptr.hit.id;tx=serialize();return}
@@ -85,5 +86,6 @@ function finishDrag(e){if(ptr.mode==='marquee')applyMarquee(e,e.ctrlKey||e.metaK
 function hoverAt(cx,cy){const h=pickAt(cx,cy);
  const nk=h?h.kind:null,ni=h?h.id:null;
  if(nk!==hover.kind||ni!==hover.id){hover={kind:nk,id:ni};applySelMats();
-  renderer.domElement.style.cursor=tool==='select'?(h?'pointer':'default'):'crosshair'}
+  renderer.domElement.style.cursor=tool==='select'?(h?'pointer':'default'):'crosshair';
+  if(appMode==='loads'&&calc.res)calcRead(h&&h.kind==='rod'?h.id:null)}
  updateGhost(cx,cy)}

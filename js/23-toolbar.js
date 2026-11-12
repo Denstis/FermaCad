@@ -34,6 +34,8 @@ function bindTopbar(){$('#btnUndo').onclick=undo;$('#btnRedo').onclick=redo;
  $('#closePlanBtn').onclick=exitPlan;
  $('#tabProps').onclick=()=>{$('#tabProps').classList.add('on');$('#tabTree').classList.remove('on');$('#paneProps').classList.add('on');$('#paneTree').classList.remove('on')};
  $('#tabTree').onclick=()=>{$('#tabTree').classList.add('on');$('#tabProps').classList.remove('on');$('#paneTree').classList.add('on');$('#paneProps').classList.remove('on');renderTree()};
+ $('#tabCalc').onclick=()=>{$('#tabCalc').classList.add('on');$('#tabProps').classList.remove('on');$('#tabTree').classList.remove('on');$('#paneCalc').classList.add('on');$('#paneProps').classList.remove('on');$('#paneTree').classList.remove('on');
+  if(!$('#paneCalc').innerHTML){$('#paneCalc').innerHTML=calcPaneHTML();bindCalcPane()}};
  $('#btnIso').onclick=()=>{ctrl.g.th=ctrl.th+Math.atan2(Math.sin(-Math.PI/4-ctrl.th),Math.cos(-Math.PI/4-ctrl.th));ctrl.g.ph=1.02};
  $('#btnFit').onclick=fitAll;
  $('#btnProj').onclick=()=>{ctrl.proj=ctrl.proj==='persp'?'ortho':'persp';updateModeUI()};

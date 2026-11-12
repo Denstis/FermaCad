@@ -6,7 +6,7 @@
 <title>ФЕРМА·CAD — редактор стержневых конструкций</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js?v=15"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js?v=16"></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -15,6 +15,7 @@
   <div id="logo"><div class="mark" data-ic="logo"></div><div><b>ФЕРМА·CAD</b><small>СТЕРЖНЕВЫЕ КОНСТРУКЦИИ</small></div></div>
   <input id="projName" value="Новый проект" spellcheck="false" title="Имя проекта">
   <div class="seg"><button id="modePlan" data-ic="grid" data-tip="Плоский чертёж XY"><span>Чертёж XY</span></button><button id="mode3d" data-ic="cube" data-tip="Объёмная 3D-модель"><span>3D вид</span></button></div>
+  <div class="seg"><button id="tabModel" class="on" data-ic="node" data-tip="Режим конструирования (F2)"><span>Каркас</span></button><button id="tabLoads" data-ic="calc" data-tip="Расчёт нагрузок: снег, ветер, эксплуатация (F3)"><span>Расчёт нагрузок</span></button><button id="tabCut" data-ic="cut" data-tip="Раскрой мерного проката (F4)"><span>Раскрой</span></button><button id="tabReport" data-ic="report" data-tip="Отчёт по каркасу (F5)"><span>Отчёт</span></button></div>
   <div class="vsep"></div>
   <button class="tbtn" id="btnUndo" data-ic="undo" data-tip="Отменить (Ctrl+Z)"><span>Отменить</span></button>
   <button class="tbtn" id="btnRedo" data-ic="redo" data-tip="Повторить (Ctrl+Y)"><span>Повторить</span></button>
@@ -57,11 +58,13 @@
     <span id="closePlanSub">Опор: 0</span>
    </div>
    <div class="ov" id="badge"></div>
+   <div class="ov" id="calcLegend"></div>
    <div class="ov" id="marquee"></div>
   </div>
   <aside id="side">
-   <div id="tabs"><button id="tabProps" class="on">СВОЙСТВА</button><button id="tabTree">МОДЕЛЬ</button></div>
+   <div id="tabs"><button id="tabProps" class="on">СВОЙСТВА</button><button id="tabTree">МОДЕЛЬ</button><button id="tabCalc">РАСЧЁТ</button></div>
    <div id="paneProps" class="on"></div>
+   <div id="paneCalc"></div>
    <div id="paneTree">
     <div id="treeTools"><input id="treeSearch" placeholder="Поиск по имени…"><select id="treeSort"><option value="name">Имя</option><option value="len">Длина</option></select></div>
     <div class="btnrow"><button class="btn" id="btnShowAll" style="font-size:10px">Показать все</button><button class="btn" id="btnOrphans" style="font-size:10px">Убрать одиночные узлы</button></div>
@@ -96,7 +99,7 @@
   </aside>
  </div>
  <footer id="status">
-  <span id="stMode">ЧЕРТЁЖ • XY</span><span id="stHint"></span><span id="stSnap"></span><span id="stCoords">0; 0; 0</span><span id="stCounts"></span>
+  <span id="stMode">ЧЕРТЁЖ • XY</span><span id="stHint"></span><span id="stSnap"></span><span id="calcRead" class="mono"></span><span id="stCoords">0; 0; 0</span><span id="stCounts"></span>
  </footer>
 </div>
 <div id="ctxMenu"></div>
@@ -105,32 +108,34 @@
 <input type="file" id="fileInput" accept=".json,application/json" hidden>
 <div id="bootErr"><div class="card"><h4 style="color:var(--danger)">НЕ УДАЛОСЬ ЗАПУСТИТЬ РЕДАКТОР</h4><p style="color:var(--muted);font-size:12px;line-height:1.6" id="bootErrMsg">Библиотека Three.js не загрузилась. Проверьте подключение к интернету (CDN) и обновите страницу.</p></div></div>
 <!-- ФЕРМА·CAD modules (split from the original single-file build) -->
-<script src="js/00-util.js?v=15"></script>
-<script src="js/01-icons.js?v=15"></script>
-<script src="js/02-types.js?v=15"></script>
-<script src="js/03-state.js?v=15"></script>
-<script src="js/04-scene3d.js?v=15"></script>
-<script src="js/05-model.js?v=15"></script>
-<script src="js/06-history.js?v=15"></script>
-<script src="js/07-scenebuild.js?v=15"></script>
-<script src="js/08-grid.js?v=15"></script>
-<script src="js/09-camera.js?v=15"></script>
-<script src="js/10-picking.js?v=15"></script>
-<script src="js/11-ghost.js?v=15"></script>
-<script src="js/12-tools.js?v=15"></script>
-<script src="js/13-pointer.js?v=15"></script>
-<script src="js/14-plan.js?v=15"></script>
-<script src="js/15-ctxmenu.js?v=15"></script>
-<script src="js/16-modals.js?v=15"></script>
-<script src="js/17-storage.js?v=15"></script>
-<script src="js/18-demo.js?v=15"></script>
-<script src="js/19-tree.js?v=15"></script>
-<script src="js/20-props.js?v=15"></script>
-<script src="js/21-coach.js?v=15"></script>
-<script src="js/22-params.js?v=15"></script>
-<script src="js/23-toolbar.js?v=15"></script>
-<script src="js/24-cube.js?v=15"></script>
-<script src="js/25-keys.js?v=15"></script>
-<script src="js/26-app.js?v=15"></script>
+<script src="js/00-util.js?v=16"></script>
+<script src="js/01-icons.js?v=16"></script>
+<script src="js/02-types.js?v=16"></script>
+<script src="js/03-state.js?v=16"></script>
+<script src="js/04-scene3d.js?v=16"></script>
+<script src="js/05-model.js?v=16"></script>
+<script src="js/06-history.js?v=16"></script>
+<script src="js/07-scenebuild.js?v=16"></script>
+<script src="js/08-grid.js?v=16"></script>
+<script src="js/09-camera.js?v=16"></script>
+<script src="js/10-picking.js?v=16"></script>
+<script src="js/11-ghost.js?v=16"></script>
+<script src="js/12-tools.js?v=16"></script>
+<script src="js/13-pointer.js?v=16"></script>
+<script src="js/14-plan.js?v=16"></script>
+<script src="js/15-ctxmenu.js?v=16"></script>
+<script src="js/16-modals.js?v=16"></script>
+<script src="js/17-storage.js?v=16"></script>
+<script src="js/18-demo.js?v=16"></script>
+<script src="js/27-data.js?v=16"></script>
+<script src="js/28-calc.js?v=16"></script>
+<script src="js/19-tree.js?v=16"></script>
+<script src="js/20-props.js?v=16"></script>
+<script src="js/21-coach.js?v=16"></script>
+<script src="js/22-params.js?v=16"></script>
+<script src="js/23-toolbar.js?v=16"></script>
+<script src="js/24-cube.js?v=16"></script>
+<script src="js/25-keys.js?v=16"></script>
+<script src="js/26-app.js?v=16"></script>
 </body>
 </html>

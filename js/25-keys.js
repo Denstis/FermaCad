@@ -31,6 +31,10 @@ document.addEventListener('keydown',e=>{
  const c=e.code,mod=e.ctrlKey||e.metaKey;
  if(mod){const f=MOD_ACTIONS[c];if(f){e.preventDefault();f(e)}return}
  if(e.key==='F1'){e.preventDefault();helpModal();return}
+ if(e.key==='F2'){e.preventDefault();setAppMode('model');return}
+ if(e.key==='F3'){e.preventDefault();setAppMode('loads');return}
+ if(e.key==='F4'){e.preventDefault();setAppMode('cut');return}
+ if(e.key==='F5'){e.preventDefault();setAppMode('report');return}
  if(TOOL_KEYS[c]){setTool(TOOL_KEYS[c]);return}
  if(c==='KeyF'){fitAll();return}
  if(c==='KeyP'){planeFromSelectionAction&&planeFromSelectionAction();return}

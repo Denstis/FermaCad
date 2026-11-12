@@ -21,7 +21,7 @@ function renderTree(){const q=($('#treeSearch').value||'').toLowerCase();const l
  list.innerHTML=
   treeSection('ОПОРЫ',sup.length,sup.map(n=>treeItemRow('node',n.id,cssColor(SUP_COLOR),n.name,`${fmt(n.p.x)}; ${fmt(n.p.y)}`)).join(''))+
   treeSection('УЗЛЫ',nod.length,nod.map(n=>treeItemRow('node',n.id,cssColor(NODE_COLOR),n.name,n.host?`на ${M.rods.get(n.host.rod)?.name||'?'} • ${Math.round(n.host.t*100)}%`:`${fmt(n.p.x)}; ${fmt(n.p.y)}; ${fmt(n.p.z)}`)).join(''),nod.length<25)+
-  treeSection('СТЕРЖНИ',rods.length,rods.map(r=>treeItemRow('rod',r.id,cssColor(TYPES[r.type].color),r.name,`${TYPES[r.type].label} • L=${fmt(rodLen(r))}`)).join(''),rods.length<25)+
+  treeSection('СТЕРЖНИ',rods.length,rods.map(r=>treeItemRow('rod',r.id,cssColor(TYPES[r.type].color),r.name,`${TYPES[r.type].label} • ${rodSec(r).name} • L=${fmt(rodLen(r))}`)).join(''),rods.length<25)+
   treeSection('ПЛОСКОСТИ',M.planes.size,[...M.planes.values()].filter(p=>match(p.name)).map(treePlaneRow).join(''))+
   treeSection('ГРУППЫ',M.groups.size,[...M.groups.values()].map(treeGroupRow).join(''))+
   treeSection('ИЗМЕРЕНИЯ',M.measures.length,M.measures.map(treeMeasureRow).join(''));
