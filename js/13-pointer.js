@@ -51,7 +51,7 @@ function beginDrag(e){if(appMode!=='model'){ptr.mode=mode==='plan'?'pan':'orbit'
  if(paste){ptr.mode=mode==='plan'?'pan':'orbit';return}
  if(tool==='select'&&ptr.hit&&ptr.hit.kind==='node'){ptr.mode='node';draggingNode=ptr.hit.id;tx=serialize();return}
  if(tool==='select'){ptr.mode='marquee';return}
- if(ROD_KEYS.includes(tool)&&ptr.hit&&ptr.hit.kind==='node'){ptr.mode='chain';chain.a=M.nodes.get(ptr.hit.id);buildWorkGrid();updateHint();return}
+ if(ROD_KEYS.includes(tool)&&tool!=='column'&&ptr.hit&&ptr.hit.kind==='node'){ptr.mode='chain';chain.a=M.nodes.get(ptr.hit.id);buildWorkGrid();updateHint();return}
  ptr.mode=mode==='plan'?'pan':'orbit'}
 function drawMarquee(e){const r=$('#vp').getBoundingClientRect();const m=$('#marquee');
  const x=Math.min(ptr.x0,e.clientX)-r.left,y=Math.min(ptr.y0,e.clientY)-r.top;

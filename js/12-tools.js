@@ -41,26 +41,32 @@ function clickNode({cx,cy,g}){
  if(s.type==='rod'){const res=nodeOnRod(s.rod,s.t);if(!res.created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}}
  else{const{created}=getOrCreateNode(mode==='plan'?s.p:V3(s.p.x,s.p.y,s.p.z));if(!created){undoStack.pop();updateUndoUI();toast('Узел здесь уже существует',{type:'info',timeout:1500});return}}
  afterChange()}
-function clickColumnPost({cx,cy,g,ev}){
- if(tool==='column'){
-  const h=pickAt(cx,cy,{kinds:['node']});
-  let base=null;
-  if(h)base=M.nodes.get(h.id);
-  else{const s=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,0,false);if(!s)return;
-   g.pushOnce();base=getOrCreateNode(V3(s.p.x,s.p.y,mode==='plan'?s.p.z:0)).node}
-  g.pushOnce();
-  const top=getOrCreateNode(base.p.clone().add(V3(0,0,params.colH)));
-  const r=addRod(base.id,top.node.id,'column');
-  if(!r){undoStack.pop();updateUndoUI();toast('Столб из этого узла уже существует',{type:'warn'});return}
-  afterChange();toast(`＋ ${r.name} • ${fmt(params.colH)} мм`,{type:'ok',timeout:1400});return}
- const h=pickAt(cx,cy,{kinds:['node']});
- if(!h){toast('Кликните по узлу или опоре',{type:'warn',timeout:1800});return}
- const n=M.nodes.get(h.id);g.pushOnce();
- const t=postTarget(n);
-  if(!t){undoStack.pop();updateUndoUI();toast('Выше узла нет пересечения со стержнем',{type:'warn'});return}
-  const res=nodeOnRod(t.rod,t.t);const r=addRod(n.id,res.node.id,'post');
-  if(!r){undoStack.pop();updateUndoUI();toast('Стойка уже существует',{type:'warn'});return}
-  afterChange();toast(`＋ ${r.name} → пересечение с ${t.rod.name} (z=${fmt(t.z)})`,{type:'ok'})}
+function clickColumnPost({cx,cy,g}){
+ const plan=(mode==='plan');
+ const h=pickAt(cx,cy,plan?{kinds:['node']}:{kinds:['node','rod','plane']});
+ const s=plan?snapPlan(cx,cy):snap3D(cx,cy,0,false);
+ let base=null;
+ if(h&&h.kind==='node')base=M.nodes.get(h.id);
+ else if(h&&h.kind==='rod'){
+  const r=M.rods.get(h.id);
+  const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p,ab=b.clone().sub(a);
+  const L2=ab.lengthSq();if(L2<1)return;
+  const t=clamp(ab.dot(h.point.clone().sub(a))/L2,0,1);
+  base=nodeOnRod(r,t).node;
+ }else if(h&&h.kind==='plane'){
+  g.pushOnce();base=getOrCreateNode(h.point).node;
+ }else if(s){
+  const q=plan?V3(s.p.x,s.p.y,s.p.z):s.p;
+  g.pushOnce();base=getOrCreateNode(q).node;
+ }
+ if(!base)return;
+ const topP=base.p.clone().add(V3(0,0,params.colH));
+ if(M.nodes.has(topP)){const tn=M.nodes.get(topP);if([...M.rods.values()].some(r=>(r.a===base.id&&r.b===tn.id)||(r.b===base.id&&r.a===tn.id))){toast('Столб из этого узла уже существует',{type:'warn',timeout:1600});if(g.did)afterChange();return}}
+ g.pushOnce();
+ const top=getOrCreateNode(topP);
+ const r=addRod(base.id,top.node.id,'column');
+ if(!r){undoStack.pop();updateUndoUI();toast('Столб из этого узла уже существует',{type:'warn'});return}
+ afterChange();toast(`＋ ${r.name} • h=${fmt(params.colH)} мм`,{type:'ok',timeout:1400})}
 function clickRodTool({cx,cy,g}){let target=null;
  if(mode==='plan'){const s=snapPlan(cx,cy);if(!s)return;
   if(s.node)target=s.node;
@@ -90,6 +96,6 @@ const CLICK_HANDLERS={select:clickSelect,support:clickSupport,node:clickNode,col
 function toolClick(cx,cy,ev){hideCtx();
  if(paste){const s=mode==='plan'?snapPlan(cx,cy):snap3D(cx,cy,0,false);if(s)commitPaste(s.p);return}
  const hit=pickAt(cx,cy);
- const f=ROD_KEYS.includes(tool)?clickRodTool:CLICK_HANDLERS[tool];
+ const f=(tool==='column')?clickColumnPost:ROD_KEYS.includes(tool)?clickRodTool:CLICK_HANDLERS[tool];
  if(!f)return;
  f({cx,cy,ev,hit,g:makeClickGuard()})}
