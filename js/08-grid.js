@@ -2,6 +2,22 @@
 'use strict';
 /* ================= GRID & DIMS ================= */
 function gridBasis(){if(mode==='plan')return pl;return{o:V3(),u:AX,v:AY,n:AZ}}
+/* flat text painted onto the grid plane: no frame, grid color, small */
+function gridText(txt,colorHex,worldH,o,u,v,cu,cv2){
+ const fs=48;const probe=document.createElement('canvas');let c=probe.getContext('2d');
+ c.font=fs+'px ui-monospace,monospace';const w=Math.ceil(c.measureText(txt).width)+10;
+ probe.width=w;probe.height=fs+14;c=probe.getContext('2d');
+ c.font=fs+'px ui-monospace,monospace';c.fillStyle=colorHex;c.textBaseline='middle';
+ c.fillText(txt,5,probe.height/2+2);
+ const tex=new THREE.CanvasTexture(probe);
+ const gh=worldH,gw=worldH*probe.width/probe.height;
+ const C=(du,dv)=>o.clone().addScaledVector(u,cu+du).addScaledVector(v,cv2+dv);
+ const p0=C(-gw/2,-gh/2),p1=C(gw/2,-gh/2),p2=C(gw/2,gh/2),p3=C(-gw/2,gh/2);
+ const geo=new THREE.BufferGeometry();
+ geo.setAttribute('position',new THREE.Float32BufferAttribute([p0.x,p0.y,p0.z,p1.x,p1.y,p1.z,p2.x,p2.y,p2.z,p0.x,p0.y,p0.z,p2.x,p2.y,p2.z,p3.x,p3.y,p3.z],3));
+ geo.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,0,1,1,0,1],2));
+ const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,side:THREE.DoubleSide,opacity:.95}));
+ m.renderOrder=3;return m}
 function rebuildGrid(){clearGroup(gGrid);const b=gridBasis();const g=params.grid;const isPlan=mode==='plan';
  let a0=-30000,a1=30000,b0=-30000,b1=30000;
  if(isPlan&&planCtx.kind==='rod'){const r=M.rods.get(planCtx.rodId);const L=r?rodLen(r):5000;a0=-1500;a1=L+1500;b0=-2600;b1=2600}
@@ -15,17 +31,17 @@ function rebuildGrid(){clearGroup(gGrid);const b=gridBasis();const g=params.grid
  if(isXY){gGrid.add(lines([P(a0,0),P(a1,0)],0xff5470,.9));gGrid.add(lines([P(0,b0),P(0,b1)],0x3ddc97,.9));
   if(!isPlan)gGrid.add(lines([V3(0,0,0),V3(0,0,2500)],0x4da6ff,.9))}
  else gGrid.add(lines([P(a0,0),P(a1,0)],0xffb020,.85));
- // labels
- const wH=isPlan?clamp(15/pl.zoom,200,1300):600;
+ // labels: flat, painted on the grid plane, grid-colored, small
+ const tH=isPlan?clamp(11/pl.zoom,130,650):320;
+ const tCol=isPlan?'#4d7ec4':'#3a5f92';
  const stride=isPlan?Math.max(1,Math.ceil((70/pl.zoom)/(g*majEvery))):4;
  let li=0;
  for(let a=Math.ceil(a0/(g*majEvery))*g*majEvery;a<=a1;a+=g*majEvery){if(li++%stride)continue;if(a===0&&isXY)continue;
-  const s=labelSprite(isPlan&&planCtx.kind==='rod'?fmt(a):fmtAxis(a),{worldH:wH,border:'#25436e',color:'#7e9cc4'});
-  s.position.copy(P(a,-wH*1.1));gGrid.add(s)}
+  gGrid.add(gridText(isPlan&&planCtx.kind==='rod'?fmt(a):fmtAxis(a),tCol,tH,b.o,b.u,b.v,a,-tH*.9))}
  li=0;
  for(let bb=Math.ceil(b0/(g*majEvery))*g*majEvery;bb<=b1;bb+=g*majEvery){if(li++%stride)continue;if(bb===0&&isXY)continue;
-  const s=labelSprite(isPlan&&planCtx.kind==='rod'?fmt(bb):fmtAxis(bb),{worldH:wH,border:'#25436e',color:'#7e9cc4'});
-  s.position.copy(P(-wH*1.6,bb));gGrid.add(s)}
+  gGrid.add(gridText(isPlan&&planCtx.kind==='rod'?fmt(bb):fmtAxis(bb),tCol,tH,b.o,b.u,b.v,-tH*1.4,bb))}
+ const wH=tH*1.6;
  if(isPlan&&planCtx.kind==='rod'){const r=M.rods.get(planCtx.rodId);if(r){const L=rodLen(r);
   const s=labelSprite('L = '+fmt(L)+' мм',{worldH:wH*1.2,border:'#8a6a20',color:'#ffd27a'});s.position.copy(P(L/2,b1-400));gGrid.add(s)}}
  if(!isPlan){const lx=labelSprite('X',{worldH:700,color:'#ff8ba0',border:'#6b2438'});lx.position.set(31500,0,0);lx.userData.autoScale=true;gGrid.add(lx);

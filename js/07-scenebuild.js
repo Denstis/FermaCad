@@ -62,12 +62,9 @@ function buildPlaneObjects(){
   geo.computeVertexNormals();
   const quad=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:linColor(0x6fd3ff),transparent:true,opacity:inCtx?params.planeOp*1.6:params.planeOp,side:THREE.DoubleSide,depthWrite:false}));
   quad.userData={kind:'plane',id:p.id,own:true,ownMat:true};quad.renderOrder=2;
-  const ctr=V3();pts.forEach(v=>ctr.add(v));ctr.multiplyScalar(1/pts.length);
-  const na=geo.attributes.normal.array;const nrm=V3(na[0],na[1],na[2]).normalize();
-  const lbl=labelSprite(p.name,{border:'#2c7ea8',color:'#a8e4ff',worldH:400});lbl.position.copy(ctr).addScaledVector(nrm,300);lbl.userData.autoScale=true;
-  const g=new THREE.Group();g.add(quad,border,lbl);g.userData={kind:'plane',id:p.id};
+  const g=new THREE.Group();g.add(quad,border);g.userData={kind:'plane',id:p.id};
   if(M.hidden.has('p'+p.id))g.visible=false;
-  gPlanes.add(g);planeObjs.set(p.id,{g,quad,border,lbl});pickPlanes.push(quad)}}
+  gPlanes.add(g);planeObjs.set(p.id,{g,quad,border});pickPlanes.push(quad)}}
 function rebuildScene(){clearGroup(gNodes);clearGroup(gRods);clearGroup(gPlanes);
  nodeObjs.clear();rodObjs.clear();planeObjs.clear();pickNodes=[];pickRods=[];pickPlanes=[];
  const cn=ctxNodeIds(),cr=ctxRodIds();const now=performance.now();
