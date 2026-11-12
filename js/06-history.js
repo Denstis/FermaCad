@@ -19,4 +19,4 @@ function undo(){if(!undoStack.length)return;redoStack.push(serialize());deserial
 function redo(){if(!redoStack.length)return;undoStack.push(serialize());deserialize(redoStack.pop());afterChange(true);updateUndoUI();toast('Повторено',{type:'info',timeout:1200})}
 function updateUndoUI(){$('#btnUndo').disabled=!undoStack.length;$('#btnRedo').disabled=!redoStack.length}
 const scheduleAuto=debounce(()=>{try{localStorage.setItem('fc.auto',JSON.stringify({data:serialize(),mode,ts:Date.now()}))}catch(e){}},900);
-function afterChange(skipProps){rebuildScene();renderTree();renderProps();updateCounts();updateModeUI();coachUpdate();scheduleAuto();updateHint()}
+function afterChange(skipProps){rebuildScene();renderTree();renderProps();updateCounts();updateModeUI();coachUpdate();scheduleAuto();updateHint();updateToolAvail&&updateToolAvail()}

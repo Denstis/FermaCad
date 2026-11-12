@@ -18,7 +18,7 @@ function updateHint(){const h={select:'Клик — выделить • Ctrl+к
  if(paste)txt='ВСТАВКА: кликните точку размещения • Esc — отмена';
  $('#stHint').textContent=txt}
 function selectOnly(kind,id){sel.nodes.clear();sel.rods.clear();sel.planes.clear();if(kind)sel[kind+'s']?.add(id);selectionChanged()}
-function selectionChanged(){applySelMats();updateSelBox();renderProps();markTreeSel()}
+function selectionChanged(){applySelMats();updateSelBox();renderProps();markTreeSel();updateToolAvail()}
 /* ---- per-tool click handlers. ctx={cx,cy,ev,hit,g}; g.pushOnce() registers one undo snapshot per click ---- */
 function makeClickGuard(){const g={did:false,pushOnce(){if(!g.did){pushUndo();g.did=true}}};return g}
 function clickSelect({ev,hit}){

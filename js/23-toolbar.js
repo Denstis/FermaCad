@@ -3,11 +3,13 @@
 /* ================= TOOLBAR & TOPBAR ================= */
 function buildToolbar(){const tb=$('#toolbar');let html='';
  TOOL_DEFS.forEach(t=>{if(t.sec){html+=`<div class="tlabel">${t.sec}</div>`;return}
-  html+=`<button class="tool" data-tool="${t.id}" data-tip="${esc(t.label)} (${t.hk})" ${t.c?`style="--tc:${cssColor(t.c)}"`:''}>${t.c?'<span class="dot"></span>':''}<i>${ICONS[t.ic]}</i><span class="hk">${t.hk}</span></button>`});
+  html+=`<button class="tool" data-tool="${t.id}" data-tip="${esc(t.label)} (${t.hk})" ${t.c?`style="--tc:${cssColor(t.c)}"`:''}>${t.c?'<span class="dot"></span>':''}<i>${ICONS[t.ic]}</i><span class="hk">${t.hk}</span></button>`;
+  if(t.id==='plane')html+='<button class="tool dis" id="tbPlaneSel" data-tip="Плоскость по выделению: ≥3 неколлинеарных компланарных узла (P)"><i>'+ICONS.planefit+'</i><span class="hk">P</span></button>'});
  html+='<div style="flex:1"></div><div class="tlabel">ВИД</div><button class="tool" id="tbFit" data-tip="Вписать всё (F)"><i>'+ICONS.fit+'</i><span class="hk">F</span></button>';
  tb.innerHTML=html;
  tb.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
- $('#tbFit').onclick=fitAll}
+ $('#tbFit').onclick=fitAll;
+ $('#tbPlaneSel').onclick=planeFromSelectionAction;updateToolAvail()}
 function bindTopbar(){$('#btnUndo').onclick=undo;$('#btnRedo').onclick=redo;
  $('#btnDemo').onclick=loadDemo;$('#btnSave').onclick=saveQuick;$('#btnOpen').onclick=savesModal;
  $('#btnImport').onclick=()=>$('#fileInput').click();
@@ -33,3 +35,35 @@ function bindTopbar(){$('#btnUndo').onclick=undo;$('#btnRedo').onclick=redo;
     ()=>{$('#vwName').focus();$('#vwName').select()})}});
   if(M.views.length)items.push({label:'Очистить список видов',ic:'trash',danger:true,fn:()=>{pushUndo();M.views=[];afterChange()}});
   showMenu(items,r.left-60,r.bottom+6)}}
+/* ================= PLANE FROM SELECTION ================= */
+/* Active when selected nodes/rod-endpoints define ONE unambiguous plane:
+   >=3 points, not collinear, all within 1 mm of the fitted plane. */
+function selPlaneData(){const pts=[],ids=[];
+ sel.nodes.forEach(id=>{const n=M.nodes.get(id);if(n){pts.push(n.p);ids.push(id)}});
+ sel.rods.forEach(id=>{const r=M.rods.get(id);if(r)[r.a,r.b].forEach(nid=>{if(!ids.includes(nid)){const n=M.nodes.get(nid);if(n){pts.push(n.p);ids.push(nid)}}})});
+ return{pts,ids}}
+function fitSelPlane(pts){if(pts.length<3)return null;let o=null,n=null;
+ for(let i=2;i<pts.length;i++){const cr=pts[1].clone().sub(pts[0]).cross(pts[i].clone().sub(pts[0]));
+  if(cr.length()>1){n=cr.normalize();o=pts[0];break}}
+ if(!n)return null;
+ for(const p of pts){if(Math.abs(p.clone().sub(o).dot(n))>1)return null}
+ return{o,n}}
+function selPlaneTriple(){const{pts,ids}=selPlaneData();
+ if(!fitSelPlane(pts))return null;
+ let A=0,B=1,best=-1;
+ for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){const d=pts[i].distanceTo(pts[j]);if(d>best){best=d;A=i;B=j}}
+ if(best<=0)return null;
+ const ab=pts[B].clone().sub(pts[A]);const L2=ab.lengthSq();let C=-1,hd=0;
+ for(let k=0;k<pts.length;k++){if(k===A||k===B)continue;const t=pts[k].clone().sub(pts[A]);
+  const perp=t.clone().sub(ab.clone().multiplyScalar(t.dot(ab)/L2));const d=perp.length();
+  if(d>hd){hd=d;C=k}}
+ if(C<0||best*hd<1)return null;
+ return[ids[A],ids[B],ids[C]]}
+function planeFromSelectionAction(){const tr=selPlaneTriple();
+ if(!tr){toast('Нужно ≥3 выделенных узла (или стержней), лежащих в одной плоскости и не на одной прямой',{type:'warn'});return}
+ const nPts=selPlaneData().pts.length;
+ pushUndo();const p=makePlane(tr);
+ if(!p){undoStack.pop();updateUndoUI();return}
+ afterChange();selectOnly('plane',p.id);
+ toast(`${p.name} по выделению (${nPts} опорных точек)`,{type:'ok'})}
+function updateToolAvail(){const b=$('#tbPlaneSel');if(b)b.classList.toggle('dis',!selPlaneTriple())}

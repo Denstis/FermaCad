@@ -33,6 +33,7 @@ document.addEventListener('keydown',e=>{
  if(e.key==='F1'){e.preventDefault();helpModal();return}
  if(TOOL_KEYS[c]){setTool(TOOL_KEYS[c]);return}
  if(c==='KeyF'){fitAll();return}
+ if(c==='KeyP'){planeFromSelectionAction&&planeFromSelectionAction();return}
  if(c==='KeyH'){if(selCount())hideSelection();return}
  if(c==='Delete'||c==='Backspace'){e.preventDefault();deleteSelection();return}
  if(c==='Enter'&&mode==='plan'){exitPlan();return}});
