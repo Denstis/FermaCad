@@ -4,8 +4,12 @@
 const ptr={down:false,btn:-1,x0:0,y0:0,x:0,y:0,moved:false,mode:null,hit:null};
 const touches=new Map();let pinchD=0,pinchM=null;
 function bindPointer(){const cv=renderer.domElement;
- cv.addEventListener('pointerdown',e=>{try{cv.setPointerCapture(e.pointerId)}catch(x){}touches.set(e.pointerId,{x:e.clientX,y:e.clientY});hideCtx();
-  if(touches.size===2){const ts=[...touches.values()];pinchD=Math.hypot(ts[0].x-ts[1].x,ts[0].y-ts[1].y);pinchM={x:(ts[0].x+ts[1].x)/2,y:(ts[0].y+ts[1].y)/2};
+ cv.addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault()});
+ cv.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault()});
+ cv.addEventListener('pointerdown',e=>{try{cv.setPointerCapture(e.pointerId)}catch(x){}
+  if(e.pointerType==='mouse')touches.clear();
+  touches.set(e.pointerId,{x:e.clientX,y:e.clientY});hideCtx();
+  if(touches.size===2){const ts=[...touches.values()];if(ts.length<2)return;pinchD=Math.hypot(ts[0].x-ts[1].x,ts[0].y-ts[1].y);pinchM={x:(ts[0].x+ts[1].x)/2,y:(ts[0].y+ts[1].y)/2};
    if(ptr.mode==='node'&&tx){deserialize(tx);tx=null;rebuildScene()}
    ptr.mode='pinch';ptr.moved=true;return}
   if(e.button===1)e.preventDefault();
@@ -40,7 +44,7 @@ function bindPointer(){const cv=renderer.domElement;
  cv.addEventListener('dblclick',e=>{if(tool!=='select')return;const h=pickAt(e.clientX,e.clientY);if(!h)return;
   if(h.kind==='rod')enterPlanRod(h.id);else if(h.kind==='plane')enterPlanPlane(h.id);
   else if(h.kind==='node'){selectOnly('node',h.id);zoomToSelection()}});
- cv.addEventListener('pointerleave',()=>{if(!ptr.down){$('#badge').style.display='none';hover={kind:null,id:null};applySelMats();clearGhost()}})}
+ cv.addEventListener('pointerleave',e=>{touches.delete(e.pointerId);if(!ptr.down){$('#badge').style.display='none';hover={kind:null,id:null};applySelMats();clearGhost()}})}
 function beginDrag(e){if(ptr.btn===1){ptr.mode='pan';return}
  if(ptr.btn===2){ptr.mode=mode==='plan'?'pan':'orbit';return}
  if(paste){ptr.mode=mode==='plan'?'pan':'orbit';return}
