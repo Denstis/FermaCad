@@ -398,30 +398,78 @@ function setAppModeQuiet(m){appMode=m;document.body.classList.toggle('app-loads'
  ['tabModel','tabLoads','tabCut','tabReport'].forEach(id=>{const b=$('#'+id);if(b)b.classList.toggle('on',id==='tab'+m.charAt(0).toUpperCase()+m.slice(1))});
  $('#toolbar').style.display=m==='model'?'':'none';
  if(m==='model'){$('#paneCalc').classList.remove('on');$('#tabProps').classList.add('on');$('#paneProps').classList.add('on')}}
-/* ---------- cut ---------- */
-function cutGroups(){const g=new Map();
- M.rods.forEach(r=>{const s=rodSec(r);const a=M.nodes.get(r.a),b=M.nodes.get(r.b);const L=Math.round(a.p.distanceTo(b.p));
-  const arr=g.get(s.id)||{sec:s,items:[]};arr.items.push({name:r.name,L});g.set(s.id,arr)});
- return[...g.values()].map(gr=>{const items=gr.items.slice().sort((a,b)=>b.L-a.L);
-  const bin=Math.round((gr.sec.sell_len_m||12)*1000);const bins=[],map=[];
-  items.forEach(it=>{let placed=false;
-   for(let i=0;i<bins.length;i++)if(bins[i]>=it.L){bins[i]-=it.L;placed=true;break}
-   if(!placed)bins.push(bin-it.L)});
-  const total=items.reduce((s,i2)=>s+i2.L,0),stockLen=bins.length*bin;
-  return{sec:gr.sec,items,nStock:bins.length,util:stockLen?total/stockLen:0,total,
-   mass:(gr.sec.mass_kg_m||0)*stockLen/1000,cost:(gr.sec.price_rub_m||0)*stockLen/1000}})}
-function openCutModal(){const grs=cutGroups().sort((a,b)=>b.total-a.total);
- let csv='Сечение,Элемент,Длина мм\n';
- const rows=grs.map(g2=>{const cnt=new Map();g2.items.forEach(i2=>cnt.set(i2.L,(cnt.get(i2.L)||0)+1));
-  [...cnt.entries()].sort((a,b)=>b[0]-a[0]).forEach(([L,c])=>csv+=`"${g2.sec.name}",${c},"${L}"\n`);
-  const list=[...cnt.entries()].sort((a,b)=>b[0]-a[0]).map(([L,c])=>`${c}× ${fmt(L)}`).join(', ');
-  return`<tr><td><b>${esc(g2.sec.name)}</b><br><span class="dim2">${g2.nStock} штаба × ${(g2.sec.sell_len_m||12)} м • утил. ${(g2.util*100).toFixed(0)}% • ${g2.mass.toFixed(0)} кг • ${Math.round(g2.cost).toLocaleString('ru')} ₽</span></td><td class="mono">${list}</td></tr>`}).join('');
- const mass=grs.reduce((s,g2)=>s+g2.mass,0),cost=grs.reduce((s,g2)=>s+g2.cost,0);
- openModal('РАСКРОЙ — мерный прокат',`<div class="hint2">Раскладка FFD по штабам длины продажи (по каталогу); цена — ₽/м из каталога 1metallobaza.</div>
- <table class="calcTab wide"><tr><th>сечение / штабы</th><th>мерные длины</th></tr>${rows}</table>
- <div class="kv"><span>Сталь по раскрою (с отходами)</span><b>${mass.toFixed(0)} кг</b></div>
- <div class="kv"><span>Ориентировочная стоимость металла</span><b>${Math.round(cost).toLocaleString('ru')} ₽</b></div>`,
- [{label:'Копировать CSV',keep:true,fn:()=>navigator.clipboard.writeText(csv).then(()=>toast('CSV скопирован',{type:'ok'}))}])}
+/* ---------- cut: торцы/запилы по биссектрисе, T-стыки, заготовь ---------- */
+const CUTD=180/Math.PI;
+function cutV(a,b){return[a.x-b.x,a.y-b.y,a.z-b.z]}
+function cutN(u){const l=Math.hypot(u[0],u[1],u[2]);return l>1e-9?[u[0]/l,u[1]/l,u[2]/l]:null}
+function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?r.b:r.a);
+ if(!nA||!nB)return{txt:'—',e:0};
+ const v=cutN(cutV(nA.p,nB.p));if(!v)return{txt:'—',e:0};
+ if(nA.type==='support')return{txt:'без запила — опора',e:0};
+ const inc=[];
+ M.rods.forEach(o=>{if(o.id===r.id)return;let oe=null;
+  if(o.a===nA.id)oe=M.nodes.get(o.b);else if(o.b===nA.id)oe=M.nodes.get(o.a);
+  if(oe){const d=cutN(cutV(nA.p,oe.p));if(d)inc.push({o,d});return}
+  const thru=(nA.host&&nA.host.rod===o.id)||(nA.hosts||[]).some(h=>h&&h.rod===o.id);
+  if(thru){const oa=M.nodes.get(o.a),ob=M.nodes.get(o.b);if(!oa||!ob)return;
+   const d=cutN(cutV(ob.p,oa.p));if(d){inc.push({o,d});inc.push({o,d:[-d[0],-d[1],-d[2]]})}}});
+ if(!inc.length)return{txt:'без запила (свободный край)',e:0};
+ const ang=(u,w)=>Math.acos(clamp(u[0]*w[0]+u[1]*w[1]+u[2]*w[2],-1,1))*CUTD;
+ const s=rodSec(r),b=s.b_mm||60,h=s.h_mm||60;
+ const L=Math.hypot(...cutV(nA.p,nB.p));
+ let e2=cutN([-v[1],v[0],0]);if(!e2)e2=[1,0,0];
+ const e3=cutN([v[1]*e2[2]-v[2]*e2[1],v[2]*e2[0]-v[0]*e2[2],v[0]*e2[1]-v[1]*e2[0]]);
+ for(const q of inc)if(ang(v,q.d)>165)return{txt:'без запила (проходной)',e:0};
+ let pair=null;
+ for(let i=0;i<inc.length&&!pair;i++)for(let j=i+1;j<inc.length;j++)
+  if(ang(inc[i].d,inc[j].d)>155){pair=[inc[i],inc[j]];break}
+ if(pair){
+  if(pair.some(q=>ang(v,q.d)>155)){const br=inc.filter(q=>pair.indexOf(q)<0);
+   return{txt:br.length?`без запила (основной; ветвь ${br.map(q=>q.o.name).join(', ')})`:'без запила (проходной)',e:0}}
+  const beta=Math.min(...pair.map(q=>ang(v,q.d)));
+  const main=rodSec(pair[0].o).mass_kg_m>=rodSec(pair[1].o).mass_kg_m?pair[0]:pair[1];
+  const hm=rodSec(main.o).h_mm||60;
+  return{txt:`T-подрез по осн. ${main.o.name}`,e:Math.min((hm/2)/Math.sin(Math.max(beta,20)*Math.PI/180),L*0.4)}}
+ const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
+ const al=ang(v,m.d),n=cutN([v[0]+m.d[0],v[1]+m.d[1],v[2]+m.d[2]]);
+ if(!n)return{txt:'без запила',e:0};
+ const c2=Math.max(.08,GVEC.dot(n,v));
+ const e=Math.min(((b/2)*Math.abs(GVEC.dot(n,e2))+(h/2)*Math.abs(GVEC.dot(n,e3)))/c2,L*0.4),th=90-al/2;
+ return{txt:`запил ${Math.abs(al-90)<1?'90°→45°':Math.round(al)+'°→'+th.toFixed(0)+'°'} (${m.o.name})`,e}}
+function cutPlan(){const out=[];
+M.rods.forEach(r=>{const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
+ const La=Math.round(a.p.distanceTo(b.p)),A=cutEndData(r,true),B=cutEndData(r,false);
+ out.push({r,La,Ls:Math.round(La+A.e+B.e),A,B,sec:rodSec(r)})});
+return out}
+function openCutModal(){const pl=cutPlan(),bySec=new Map();
+pl.forEach(it=>{const a=bySec.get(it.sec.id)||{sec:it.sec,items:[]};a.items.push(it);bySec.set(it.sec.id,a)});
+const grs=[...bySec.values()].map(gr=>{const items=gr.items.slice().sort((x,y)=>y.Ls-x.Ls);
+ const bin=Math.round((gr.sec.sell_len_m||12)*1000),bins=[];
+ items.forEach(it=>{let placed=false;
+  for(let i=0;i<bins.length;i++)if(bins[i]>=it.Ls){bins[i]-=it.Ls;placed=true;break}
+  if(!placed)bins.push(bin-it.Ls)});
+ const total=items.reduce((s,i2)=>s+i2.Ls,0),stockLen=bins.length*bin;
+ return{sec:gr.sec,items,nStock:bins.length,util:stockLen?total/stockLen:0,total,
+  mass:(gr.sec.mass_kg_m||0)*stockLen/1000,cost:(gr.sec.price_rub_m||0)*stockLen/1000}}).sort((a,b)=>b.total-a.total);
+let csv='Сечение;Элемент;L ось мм;+запил A;+запил B;L заготовок мм;Запил A;Запил B\n';
+const ex=pl.find(it=>/запил \d/.test(it.A.txt+it.B.txt));
+const exH=ex?`Пример ${esc(ex.r.name)}: А «${esc(ex.A.txt)}» +${Math.round(ex.A.e)} мм, Б «${esc(ex.B.txt)}» +${Math.round(ex.B.e)} мм → заготовок ${ex.Ls} мм (ось ${ex.La} мм)`:
+ 'Пример: угол 90° → запилам 45°; заготовок = ось + (h/2)·ctg(α/2) с обоих концов';
+const rows=grs.map(g2=>{
+ g2.items.forEach(it=>csv+=`"${g2.sec.name}";"${it.r.name}";${it.La};${Math.round(it.A.e)};${Math.round(it.B.e)};${it.Ls};"${it.A.txt}";"${it.B.txt}"\n`);
+ return`<tr class="grp"><td colspan="6"><b>${esc(g2.sec.name)}</b> — ${g2.nStock} штаб × ${g2.sec.sell_len_m||12} м • утил. ${(g2.util*100).toFixed(0)}% • ${g2.mass.toFixed(0)} кг • ${Math.round(g2.cost).toLocaleString('ru')} ₽</td></tr>`+
+  g2.items.map(it=>`<tr><td>${esc(it.r.name)}</td><td class="mono">${it.La}</td><td class="mono">+${Math.round(it.A.e)}</td><td class="mono">+${Math.round(it.B.e)}</td><td class="mono"><b>${it.Ls}</b></td><td class="mono dim2">${esc(it.A.txt)} • ${esc(it.B.txt)}</td></tr>`).join('')}).join('');
+const mass=grs.reduce((s,g2)=>s+g2.mass,0),cost=grs.reduce((s,g2)=>s+g2.cost,0),
+ totL=grs.reduce((s,g2)=>s+g2.total,0),stockL=grs.reduce((s,g2)=>s+g2.nStock*Math.round((g2.sec.sell_len_m||12)*1000),0);
+openModal('РАСКРОЙ — резы и запилы по биссектрисе',
+`<div class="hint2">Длина заготовки = длина осей + выносы запилов. Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез), вынос = h/2 осн. / sin β.</div>
+<div class="kv"><span>Пример расчёта</span><b style="font-size:11px">${exH}</b></div>
+<table class="calcTab wide"><tr><th>элемент</th><th>L ось</th><th>+A</th><th>+B</th><th>L загот</th><th>запилы (A • Б)</th></tr>${rows}</table>
+<div class="kv"><span>Длина заготовок (с запилами)</span><b>${(totL/1000).toFixed(1)} м</b></div>
+<div class="kv"><span>В мерном прокате (${grs.reduce((s,g2)=>s+g2.nStock,0)} шт)</span><b>${(stockL/1000).toFixed(1)} м • отход ${stockL?(100-totL/stockL*100).toFixed(0):0}%</b></div>
+<div class="kv"><span>Сталь в покупке (с отходами)</span><b>${mass.toFixed(0)} кг</b></div>
+<div class="kv"><span>Ориентировочная стоимость металла</span><b>${Math.round(cost).toLocaleString('ru')} ₽</b></div>`,
+[{label:'Копировать CSV',keep:true,fn:()=>navigator.clipboard.writeText(csv).then(()=>toast('CSV скопирован',{type:'ok'}))},{label:'Закрыть',fn:closeModal}])}
 /* ---------- report ---------- */
 function openReportModal(){
  if(!calc.res){toast('Сначала выполните РАСЧЁТ в режиме «Нагрузки»',{type:'warn'});setAppMode('loads');return}

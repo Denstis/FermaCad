@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>АДАПТЕР • каркас → твёрдотельные трубы (раскрой/запилы)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{--bg:#0a1220;--p:#101c30;--s:#16263e;--l:#22405f;--ink:#e8f0fb;--mut:#8ba3c7;--dim:#5d7699;
+--acc:#4da6ff;--gold:#ffb020;--ok:#3ddc97;--warn:#ffc53d;--err:#ff5470;--mag:#ff5fd2;
+--mono:'JetBrains Mono',ui-monospace,Consolas,monospace;--sans:Inter,system-ui,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%;overflow:hidden}
+body{font:13px/1.45 var(--sans);background:var(--bg);color:var(--ink)}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#22405f;border-radius:6px;border:2px solid #0d1830}
+*{scrollbar-width:thin;scrollbar-color:#22405f transparent}
+button{font:600 12px var(--sans);color:var(--ink);background:var(--s);border:1px solid var(--l);border-radius:8px;padding:7px 11px;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--acc);box-shadow:0 0 10px rgba(77,166,255,.25)}
+button.pri{background:linear-gradient(135deg,#6cb8ff,#3d8fe0);color:#06121f;border:0}
+button.gold{background:linear-gradient(135deg,#ffd27a,#ff9a3d);color:#241000;border:0}
+button:disabled{opacity:.4;pointer-events:none}
+input,select,textarea{font:12px var(--sans);color:var(--ink);background:#0c1930;border:1px solid var(--l);border-radius:7px;padding:6px 8px;outline:none;width:100%}
+input[type=number]{font-family:var(--mono)}input:focus,select:focus{border-color:var(--acc)}
+#app{display:grid;grid-template-rows:50px 1fr 30px;height:100%}
+header{display:flex;align-items:center;gap:8px;padding:0 12px;background:linear-gradient(180deg,#15243c,#0d1830);border-bottom:1px solid var(--l)}
+header b{font-size:14px;letter-spacing:.5px;background:linear-gradient(90deg,#cfe6ff,#4da6ff 60%,#ffb020);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+header .sp{flex:1}
+#main{display:grid;grid-template-columns:280px 1fr 360px;min-height:0}
+aside{background:var(--p);overflow-y:auto;padding:12px;border-right:1px solid var(--l)}
+#right{border-right:0;border-left:1px solid var(--l)}
+h3{font-size:10px;letter-spacing:1.4px;color:var(--gold);margin:12px 0 8px}h3:first-child{margin-top:0}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:7px}.row label{width:96px;flex:none;font-size:11px;color:var(--mut)}
+.row .u{font-size:10px;color:var(--dim);font-family:var(--mono)}
+.card{background:var(--s);border:1px solid var(--l);border-radius:10px;padding:10px;margin-bottom:10px}
+.kv{display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px dashed var(--l)}
+.kv span{color:var(--mut)}.kv b{font-family:var(--mono);font-weight:600}
+.hint{font-size:11px;color:var(--mut);background:rgba(77,166,255,.07);border:1px solid rgba(77,166,255,.2);border-radius:8px;padding:8px;margin-bottom:10px}
+#vp{position:relative;min-width:0;background:radial-gradient(900px 600px at 30% 0%,rgba(38,80,150,.25),transparent 60%),linear-gradient(160deg,#0a1322,#070d1a)}
+#vp canvas{display:block;touch-action:none}
+#hud{position:absolute;left:12px;top:12px;background:rgba(10,18,32,.9);border:1px solid var(--l);border-radius:10px;padding:8px 12px;font:11px var(--mono);color:var(--mut)}
+#hud b{color:var(--gold)}
+footer{display:flex;align-items:center;gap:14px;padding:0 12px;background:#0a1424;border-top:1px solid var(--l);font:10px var(--mono);color:var(--dim)}
+table{width:100%;border-collapse:collapse;font:10px var(--mono)}
+th,td{padding:4px 6px;border-bottom:1px solid var(--l);text-align:left;white-space:nowrap}
+th{color:var(--gold);font-size:9px;letter-spacing:.6px;position:sticky;top:0;background:var(--p)}
+tr.sel{background:rgba(77,166,255,.15)}tr:hover{background:rgba(77,166,255,.08);cursor:pointer}
+#tblWrap{max-height:220px;overflow:auto;border:1px solid var(--l);border-radius:8px}
+canvas.scheme{width:100%;background:#0c1930;border:1px solid var(--l);border-radius:8px;margin-bottom:8px}
+.tag{display:inline-block;font:700 9px var(--mono);padding:2px 7px;border-radius:6px;margin-right:4px}
+.warn{color:var(--warn)}.err{color:var(--err)}.ok{color:var(--ok)}
+#drop{position:absolute;inset:0;display:none;place-items:center;background:rgba(6,10,20,.8);z-index:50;font-size:16px;color:var(--acc)}
+#drop.on{display:grid}
+@media(max-width:1100px){#main{grid-template-columns:240px 1fr}#right{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+<header><b>АДАПТЕР • КАРАС → ТРУБЫ</b>
+ <button id="bLoad">Загрузить JSON</button><button id="bDemo">Демо</button>
+ <span class="sp"></span>
+ <button id="bStlAll">STL всё</button><button id="bObjAll">OBJ всё</button>
+ <button id="bCsv" class="gold">Таблица CSV</button><button id="bRep">Отчёт JSON</button>
+</header>
+<div id="main">
+<aside id="left">
+ <h3>СТРАТЕГИЯ ПРИМЫКАНИЯ УКОСИН</h3>
+ <select id="variant">
+  <option value="1">Вариант 1 — к полкам, без стоек</option>
+  <option value="2" selected>Вариант 2 — к полкам (стойки notch)</option>
+  <option value="3">Вариант 3 — к стойкам (сдвиг+угол)</option>
+ </select>
+ <div class="hint">Приоритет реза: <b style="color:var(--ok)">полки</b> &gt; <b style="color:var(--acc)">стойки/столбы</b> &gt; <b style="color:var(--gold)">укосины</b>. Крайние стойки подрезаются торцом полки.</div>
+ <div class="row"><label>Зазор (сварка)</label><input type="number" id="gap" value="0" step="0.5" min="0"><span class="u">мм</span></div>
+ <div class="row"><label>Плотность</label><input type="number" id="dens" value="7850" step="10"><span class="u">кг/м³</span></div>
+ <h3>Сечения ПО УМОЛЧАНИЮ (если sec=null)</h3>
+ <div id="defs"></div>
+ <h3>Сечения ИЗ ФАЙЛА / ПЕРЕОПРЕДЕЛЕНИЕ</h3>
+ <div class="row"><label>Профиль</label><select id="secEdit"></select></div>
+ <div class="row"><label>Высота h</label><input type="number" id="secH"><span class="u">мм</span></div>
+ <div class="row"><label>Ширина w</label><input type="number" id="secW"><span class="u">мм</span></div>
+ <div class="row"><label>Стенка t</label><input type="number" id="secT" step="0.5"><span class="u">мм</span></div>
+ <div class="row"><label>Поворот °</label><input type="number" id="secR" step="5" value="0"><span class="u">ось</span></div>
+ <button id="bApplySec" style="width:100%">Применить к выбранному типу</button>
+ <h3>ПРОВЕРКИ</h3>
+ <div id="checks" class="card" style="font-size:11px"></div>
+</aside>
+<div id="vp"><div id="hud">загрузите проект…</div><div id="drop">Отпустите JSON</div></div>
+<aside id="right">
+ <h3>ЭЛЕМЕНТ</h3>
+ <div id="elCard" class="card">—</div>
+ <canvas id="scheme" class="scheme" width="640" height="420"></canvas>
+ <div class="row"><button id="bStlEl" style="flex:1">STL элемента</button><button id="bObjEl" style="flex:1">OBJ элемента</button></div>
+ <h3>ТАБЛИЦА РАСКРОЯ / ЗАПИЛОВ</h3>
+ <div id="tblWrap"><table id="tbl"></table></div>
+</aside>
+</div>
+<footer><span id="stL">—</span><span id="stR"></span></footer>
+</div>
+<input type="file" id="file" accept=".json" hidden>
+<script>
+'use strict';
+const $=s=>document.querySelector(s);const V3=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));const fmt=n=>Math.round(n).toLocaleString('ru-RU');
+const D2R=Math.PI/180,R2D=180/Math.PI,EPS=1e-6;
+/* ---------- профили ---------- */
+const DEF={top:'shs_60x60x3',bottom:'rhs_80x40x3',purlin:'rhs_80x40x3',column:'shs_100x100x4',post:'shs_60x60x3',diag:'shs_50x50x2',sdiag:'shs_50x50x2',brace:'shs_50x50x2',custom:'shs_50x50x2'};
+const PRIO={top:0,bottom:0,purlin:0,column:1,post:1,diag:2,sdiag:2,brace:2,custom:2};
+const COL={top:0x35e05a,bottom:0x35e05a,purlin:0x35e0ff,column:0xff5470,post:0x38c8ff,diag:0xffe23f,sdiag:0xffe23f,brace:0xa78bfa,custom:0x93a7c4};
+const LABEL={top:'Верхний пояс',bottom:'Нижний пояс',purlin:'Прогон',column:'Столб',post:'Стойка',diag:'Раскос',sdiag:'Опорный раскос',brace:'Связь',custom:'Пользов.'};
+function parseSec(s,type){s=s||DEF[type]||DEF.custom;const m=String(s).match(/(shs|rhs)_(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/i);
+ if(!m)return{h:60,w:60,t:3,name:s};const a=+m[2],b=+m[3],t=+m[4];
+ return m[1].toLowerCase()==='rhs'?{h:a,w:b,t,name:s}:{h:a,w:a,t,name:s}}
+let SECOVR={};   // type -> {h,w,t,rot}
+let MODEL=null, BUILT=[], SEL=null;
+/* ---------- выпуклая геометрия ---------- */
+function boxFaces(o,x,y,z,hx,hy,z0,z1){
+ const P=(a,b,c)=>o.clone().addScaledVector(x,a).addScaledVector(y,b).addScaledVector(z,c);
+ const c=[P(-hx,-hy,z0),P(hx,-hy,z0),P(hx,hy,z0),P(-hx,hy,z0),P(-hx,-hy,z1),P(hx,-hy,z1),P(hx,hy,z1),P(-hx,hy,z1)];
+ const F=(i,tag)=>({pts:i.map(k=>c[k].clone()),tag});
+ return [F([0,1,2,3],'endA'),F([7,6,5,4],'endB'),F([0,4,5,1],'side'),F([1,5,6,2],'side'),F([2,6,7,3],'side'),F([3,7,4,0],'side')];
+}
+function clipFace(pts,n,c){const out=[],cuts=[];
+ for(let i=0;i<pts.length;i++){const a=pts[i],b=pts[(i+1)%pts.length];const da=n.dot(a)-c,db=n.dot(b)-c;
+  if(da>=-EPS)out.push(a);
+  if((da>EPS&&db<-EPS)||(da<-EPS&&db>EPS)){const t=da/(da-db);const p=a.clone().lerp(b,t);out.push(p);cuts.push(p)}}
+ return{out,cuts}}
+function clipSolid(faces,n,c,tag){const nf=[],cap=[];
+ for(const f of faces){const r=clipFace(f.pts,n,c);if(r.out.length>=3)nf.push({pts:r.out,tag:f.tag});cap.push(...r.cuts)}
+ if(cap.length>=3){const pts=[];cap.forEach(p=>{if(!pts.some(q=>q.distanceTo(p)<1e-5))pts.push(p)});
+  if(pts.length>=3){const cen=pts.reduce((s,p)=>s.add(p),V3()).divideScalar(pts.length);
+   const ref=Math.abs(n.x)<.9?V3(1,0,0):V3(0,1,0);const ux=ref.clone().addScaledVector(n,-ref.dot(n)).normalize();const vy=n.clone().cross(ux);
+   pts.sort((a,b)=>Math.atan2(vy.dot(a.clone().sub(cen)),ux.dot(a.clone().sub(cen)))-Math.atan2(vy.dot(b.clone().sub(cen)),ux.dot(b.clone().sub(cen))));
+   pts.reverse();nf.push({pts,tag:tag||'cut',n:n.clone(),c})}}
+ return nf}
+function volume(faces){let v=0;for(const f of faces){const p=f.pts;for(let i=1;i<p.length-1;i++)v+=p[0].dot(p[i].clone().cross(p[i+1]))/6}return v}
+function fixOrient(faces){if(volume(faces)<0)faces.forEach(f=>f.pts.reverse());return faces}
+/* ---------- кадр элемента ---------- */
+function frameFor(d,rot,type){d=d.clone().normalize();
+ let up=Math.abs(d.z)<.7?V3(0,0,1):V3(1,0,0);
+ let y=up.clone().addScaledVector(d,-up.dot(d)).normalize();let x=y.clone().cross(d).normalize();
+ if(rot){const a=rot*D2R;const x2=x.clone().multiplyScalar(Math.cos(a)).addScaledVector(y,Math.sin(a));const y2=y.clone().multiplyScalar(Math.cos(a)).addScaledVector(x,-Math.sin(a));x=x2;y=y2}
+ return{x,y,z:d}}
+function obbOf(m){return{o:m.A,x:m.fr.x,y:m.fr.y,z:m.fr.z,hx:m.sec.w/2,hy:m.sec.h/2,L:m.L}}
+function inOBB(p,ob,mar){const d=p.clone().sub(ob.o);const lx=d.dot(ob.x),ly=d.dot(ob.y),lz=d.dot(ob.z);
+ return Math.abs(lx)<=ob.hx+mar&&Math.abs(ly)<=ob.hy+mar&&lz>=-mar&&lz<=ob.L+mar}
+function entryPlane(m,ob,end){ // плоскость входа оси m в OBB ob со стороны конца end
+ const p0=(end==='A'?m.A:m.B).clone().sub(ob.o);const dir=(end==='A'?m.fr.z:m.fr.z.clone().negate());
+ const lp=V3(p0.dot(ob.x),p0.dot(ob.y),p0.dot(ob.z));const ld=V3(dir.dot(ob.x),dir.dot(ob.y),dir.dot(ob.z));
+ const half=[ob.hx,ob.hy,ob.L];const lo=[-ob.hx,-ob.hy,0];
+ let tmin=-1e9,axis=-1,sgn=1;
+ for(let i=0;i<3;i++){const d=[lp.x,lp.y,lp.z][i],v=[ld.x,ld.y,ld.z][i];
+  if(Math.abs(v)<1e-9){if(d<lo[i]||d>half[i])return null;continue}
+  let t1=(lo[i]-d)/v,t2=(half[i]-d)/v,s=-1;if(t1>t2){[t1,t2]=[t2,t1];s=1}
+  if(t1>tmin){tmin=t1;axis=i;sgn=s}}
+ if(axis<0)return null;
+ const n=[ob.x,ob.y,ob.z][axis].clone().multiplyScalar(sgn);
+ const fc=ob.o.clone().addScaledVector([ob.x,ob.y,ob.z][axis], sgn>0?half[axis]:lo[axis]);
+ return{n,c:n.dot(fc)}}
+/* ---------- сборка ---------- */
+function build(){
+ BUILT=[];const nodes=new Map(MODEL.nodes.map(n=>[n.id,n]));
+ const members=MODEL.rods.map(r=>{const a=nodes.get(r.a),b=nodes.get(r.b);if(!a||!b)return null;
+  const type=r.type;const sec=Object.assign(parseSec(r.sec,type),SECOVR[type]||{});
+  const A=V3(...a.p),B=V3(...b.p);return{id:r.id,name:r.name,type,sec,A,B,rot:(SECOVR[type]||{}).rot||0,hostA:a.host,hostB:b.host}}).filter(Boolean);
+ const variant=+$('#variant').value,gap=+$('#gap').value||0;
+ // кадры и OBB
+ members.forEach(m=>{m.L0=m.A.distanceTo(m.B);m.fr=frameFor(m.B.clone().sub(m.A),m.rot,m.type);m.L=m.L0});
+ const obbs=new Map(members.map(m=>[m.id,obbOf(m)]));
+ const isBrace=m=>PRIO[m.type]===2, isPost=m=>m.type==='post'||m.type==='column', isChord=m=>PRIO[m.type]===0;
+ // соединения
+ function joints(m){const out=[];const ob=obbs.get(m.id);
+  for(const o of members){if(o.id===m.id)continue;const oo=obbs.get(o.id);
+   const prO=PRIO[o.type],prM=PRIO[m.type];
+   for(const end of['A','B']){const p=end==='A'?m.A:m.B;
+    const near=inOBB(p,oo,Math.max(m.sec.h,m.sec.w));
+    const shared=(end==='A'?m.hostA:m.hostB)&& (end==='A'?m.hostA:m.hostB).rod===o.id;
+    if(!near&&!shared)continue;
+    if(isBrace(m)&&isPost(o)&&variant===1)continue;
+    out.push({o,end,prO,prM,oo})}}
+  return out}
+ for(const m of members){
+  let A=m.A.clone(),B=m.B.clone();const cuts=[];const notes=[];
+  const js=joints(m);
+  // Вариант 3: сдвиг конца укосины к грани стойки
+  if(isBrace(m)&&variant===3){for(const j of js){if(!isPost(j.o))continue;
+    const oo=j.oo;const p=j.end==='A'?A:B;
+    // горизонтальная нормаль грани стойки, смотрящая на конец укосины
+    let best=null;for(const ax of[oo.x,oo.y]){if(Math.abs(ax.z)>.5)continue;
+      for(const s of[1,-1]){const n=ax.clone().multiplyScalar(s);const c=n.dot(oo.o)+ (s>0? (ax===oo.x?oo.hx:oo.hy):-(ax===oo.x?oo.hx:oo.hy));
+        const dist=n.dot(p)-c;if(dist>0&&(!best||dist<best.dist))best={n,c,dist}}}
+    if(best){const half=Math.abs(best.n.dot(m.fr.x))*m.sec.w/2+Math.abs(best.n.dot(m.fr.y))*m.sec.h/2;
+      const shift=best.dist-half; if(shift>0.5){const np=best.n.clone().multiplyScalar(-shift);
+        if(j.end==='A')A.add(np);else B.add(np);notes.push('сдвиг к стойке '+fmt(shift)+' мм');}}}}
+  m.A=A;m.B=B;m.L=A.distanceTo(B);m.fr=frameFor(B.clone().sub(A),m.rot,m.type);
+  let faces=boxFaces(A,m.fr.x,m.fr.y,m.fr.z,m.sec.w/2,m.sec.h/2,0,m.L);
+  const ob=obbOf(m);
+  // отсечения по приоритету
+  for(const j of js){const o=j.o,oo=j.oo;
+   if(j.prO<j.prM){ // o выше -> режем m
+     const pl=entryPlane(m,oo,j.end);
+     if(pl){faces=clipSolid(faces,pl.n,pl.c+gap,'cut');cuts.push({n:pl.n,c:pl.c,by:o.name,kind:'miter'})}
+     // крайняя стойка не выступает за торец полки
+     if(isPost(m)&&isChord(o)){const lzA=(j.end==='A'?A:B).clone().sub(oo.o).dot(oo.z);
+       if(lzA<1||lzA>oo.L-1){const s=lzA<1?-1:1;const n=oo.z.clone().multiplyScalar(s);const c=n.dot(oo.o)+(s>0?oo.L:0);
+         faces=clipSolid(faces,n,c+gap,'cut');cuts.push({n,c,by:o.name,kind:'end-trim'});notes.push('подрезка торцом полки')}}
+   } else if(j.prO===j.prM){ // равный приоритет -> взаимный митер по биссектрисе
+     const node=j.end==='A'?A:B;const dm=m.fr.z.clone().multiplyScalar(j.end==='A'?1:-1);
+     const do_=o.fr.z.clone(); // направление o от узла
+     // определяем направление o от общего узла
+     const dA=o.A.distanceTo(node),dB=o.B.distanceTo(node);const doDir=(dA<dB?o.fr.z:o.fr.z.clone().negate());
+     const n=dm.clone().sub(doDir).normalize();
+     if(n.length()>.1){faces=clipSolid(faces,n,n.dot(node)+gap,'cut');cuts.push({n,c:n.dot(node),by:o.name,kind:'bisect'})}}
+  }
+  fixOrient(faces);
+  // внутренний объём (стенка) для массы
+  let inner=boxFaces(A.clone().addScaledVector(m.fr.z,-1),m.fr.x,m.fr.y,m.fr.z,Math.max(m.sec.w/2-m.sec.t,1),Math.max(m.sec.h/2-m.sec.t,1),0,m.L+2);
+  for(const c of cuts)inner=clipSolid(inner,c.n,c.c+gap,'x');
+  const Vo=volume(faces),Vi=volume(inner);
+  const mass=Math.max(0,(Vo-Vi))*1e-9*(+$('#dens').value||7850);
+  // метрики резов
+  const cutInfo=cuts.map(c=>{const nd=Math.abs(c.n.dot(m.fr.z));const alpha=Math.acos(clamp(nd,0,1))*R2D;
+    const phi=Math.atan2(c.n.dot(m.fr.x),c.n.dot(m.fr.y))*R2D;
+    return{by:c.by,kind:c.kind,alpha:+alpha.toFixed(1),phi:+phi.toFixed(1)}});
+  // длина заготовки = макс проекция на ось
+  let zmax=0,zmin=1e9;faces.forEach(f=>f.pts.forEach(p=>{const lz=p.clone().sub(A).dot(m.fr.z);zmax=Math.max(zmax,lz);zmin=Math.min(zmin,lz)}));
+  BUILT.push({m,faces,cuts:cutInfo,notes,mass,Lstock:zmax-zmin,zmin,zmax,Vo,Vi});
+ }
+ render3D();renderTable();checks();select(BUILT[0]?BUILT[0].m.id:null);
+ $('#stL').textContent=`элементов ${BUILT.length} • масса ${fmt(BUILT.reduce((s,b)=>s+b.mass,0))} кг`;
+}
+/* ---------- проверки ---------- */
+function checks(){const el=$('#checks');let h='';
+ const bad=BUILT.filter(b=>b.Vo<1);if(bad.length)h+=`<div class="err">Вырожденные тела: ${bad.map(b=>b.m.name).join(', ')}</div>`;
+ const noCut=BUILT.filter(b=>!b.cuts.length&&PRIO[b.m.type]>0);if(noCut.length)h+=`<div class="warn">Без резов (проверьте стыки): ${noCut.length}</div>`;
+ // выступание стоек за полки
+ let protr=0;for(const b of BUILT){if(b.m.type!=='post'&&b.m.type!=='column')continue;
+  for(const o of BUILT){if(PRIO[o.m.type]!==0)continue;
+   // вершина стойки выше верхней грани полки?
+   for(const f of b.faces)for(const p of f.pts){const d=p.clone().sub(o.m.A);const lz=d.dot(o.m.fr.z);const ly=d.dot(o.m.fr.y);
+     if(lz>-1&&lz<o.m.L+1&&ly>o.m.sec.h/2+0.6)protr++}}}
+ h+=protr?`<div class="err">Выступание стоек за полки: ${protr} верш.</div>`:`<div class="ok">Стойки не выступают за полки ✔</div>`;
+ h+=`<div class="ok">Полки не режутся ✔ (приоритет 0)</div>`;
+ el.innerHTML=h||'<div class="ok">OK</div>'}
+/* ---------- 3D ---------- */
+let renderer,scene,cam,ctrl={t:V3(),r:12000,th:-.8,ph:1.1},meshes=[],ray=new THREE.Raycaster();
+function init3D(){renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+ $('#vp').prepend(renderer.domElement);scene=new THREE.Scene();cam=new THREE.PerspectiveCamera(50,1,1,500000);
+ scene.add(new THREE.HemisphereLight(0xbdd8ff,0x2a2118,.8));const dl=new THREE.DirectionalLight(0xfff0dd,1.1);dl.position.set(9000,-11000,16000);scene.add(dl);
+ const rs=()=>{const r=$('#vp').getBoundingClientRect();renderer.setSize(r.width,r.height);cam.aspect=r.width/r.height;cam.updateProjectionMatrix()};
+ new ResizeObserver(rs).observe($('#vp'));rs();
+ const cv=renderer.domElement;let down=null;
+ cv.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,b:e.button};cv.setPointerCapture(e.pointerId)});
+ cv.addEventListener('pointermove',e=>{if(!down)return;const dx=e.clientX-down.x,dy=e.clientY-down.y;
+  if(down.b===0){ctrl.th-=dx*.005;ctrl.ph=clamp(ctrl.ph-dy*.005,.05,Math.PI-.05)}else{pan(dx,dy)}down.x=e.clientX;down.y=e.clientY});
+ cv.addEventListener('pointerup',e=>{if(down&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<4&&down.b===0)pick(e);down=null});
+ cv.addEventListener('wheel',e=>{e.preventDefault();ctrl.r=clamp(ctrl.r*Math.exp(e.deltaY*.001),300,200000)},{passive:false});
+ cv.addEventListener('contextmenu',e=>e.preventDefault());
+ (function loop(){const sp=Math.sin(ctrl.ph);cam.position.copy(ctrl.t).add(V3(sp*Math.cos(ctrl.th),sp*Math.sin(ctrl.th),Math.cos(ctrl.ph)).multiplyScalar(ctrl.r));
+  cam.up.set(0,0,1);cam.lookAt(ctrl.t);renderer.render(scene,cam);requestAnimationFrame(loop)})();
+}
+function pan(dx,dy){const s=2*ctrl.r*Math.tan(25*D2R)/renderer.domElement.height;const m=cam.matrixWorld.elements;
+ ctrl.t.addScaledVector(V3(m[0],m[1],m[2]),-dx*s).addScaledVector(V3(m[4],m[5],m[6]),dy*s)}
+function facesToGeo(faces){const pos=[],nor=[];for(const f of faces){const p=f.pts;const n=f.n||p[1].clone().sub(p[0]).cross(p[2].clone().sub(p[0])).normalize();
+ for(let i=1;i<p.length-1;i++){[p[0],p[i],p[i+1]].forEach(v=>{pos.push(v.x,v.y,v.z);nor.push(n.x,n.y,n.z)})}}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));return g}
+function render3D(){meshes.forEach(m=>scene.remove(m));meshes=[];
+ const box=new THREE.Box3();
+ for(const b of BUILT){const mat=new THREE.MeshStandardMaterial({color:COL[b.m.type],metalness:.3,roughness:.5});
+  const mesh=new THREE.Mesh(facesToGeo(b.faces),mat);mesh.userData.id=b.m.id;scene.add(mesh);meshes.push(mesh);
+  b.faces.forEach(f=>f.pts.forEach(p=>box.expandByPoint(p)))}
+ if(!box.isEmpty()){ctrl.t.copy(box.getCenter(V3()));ctrl.r=box.getSize(V3()).length()*1.1}
+ $('#hud').innerHTML=`<b>${BUILT.length}</b> тел • вариант ${$('#variant').value} • ЛКМ орбита / ПКМ панорама / колесо зум / клик выбор`}
+function pick(e){const r=renderer.domElement.getBoundingClientRect();
+ ray.setFromCamera({x:(e.clientX-r.left)/r.width*2-1,y:-((e.clientY-r.top)/r.height)*2+1},cam);
+ const h=ray.intersectObjects(meshes)[0];select(h?h.object.userData.id:null)}
+function select(id){SEL=id;meshes.forEach(m=>{m.material.emissive=new THREE.Color(m.userData.id===id?0x224466:0x000000)});
+ const b=BUILT.find(x=>x.m.id===id);renderCard(b);drawScheme(b);
+ document.querySelectorAll('#tbl tr').forEach(tr=>tr.classList.toggle('sel',+tr.dataset.id===id))}
+/* ---------- карточка + схема ---------- */
+function renderCard(b){const el=$('#elCard');if(!b){el.textContent='—';return}
+ const m=b.m;el.innerHTML=`<div style="margin-bottom:6px"><span class="tag" style="background:#${COL[m.type].toString(16).padStart(6,'0')};color:#08131f">${m.name}</span>${LABEL[m.type]}</div>
+ <div class="kv"><span>Сечение</span><b>${m.sec.name||''} h${m.sec.h}×w${m.sec.w}×t${m.sec.t}</b></div>
+ <div class="kv"><span>L по оси / заготовка</span><b>${fmt(m.L)} / ${fmt(b.Lstock)} мм</b></div>
+ <div class="kv"><span>Масса</span><b>${b.mass.toFixed(2)} кг</b></div>
+ <div class="kv"><span>Резов</span><b>${b.cuts.length}</b></div>
+ ${b.cuts.map((c,i)=>`<div class="kv"><span>Рез ${i+1} (${c.by})</span><b>${c.alpha}° @ ${c.phi}°</b></div>`).join('')}
+ ${b.notes.map(n=>`<div class="warn" style="font-size:10px">• ${n}</div>`).join('')}`}
+function hull(pts){pts=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+ const lo=[],up=[];for(const p of pts){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p)}
+ for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p)}
+ lo.pop();up.pop();return lo.concat(up)}
+function drawScheme(b){const cv=$('#scheme'),x=cv.getContext('2d');x.clearRect(0,0,cv.width,cv.height);
+ if(!b)return;const m=b.m;const verts=[];b.faces.forEach(f=>f.pts.forEach(p=>verts.push(p)));
+ const loc=verts.map(p=>{const d=p.clone().sub(m.A);return[d.dot(m.fr.z),d.dot(m.fr.x),d.dot(m.fr.y)]});
+ const views=[{i:1,t:'ВИД СВЕРХУ (ось–X)',c:'#4da6ff'},{i:2,t:'ВИД СБОКУ (ось–Y)',c:'#3ddc97'}];
+ const pad=40,W=cv.width,H=cv.height/2;
+ views.forEach((v,vi)=>{const y0=vi*H;const zs=loc.map(l=>l[0]),ws=loc.map(l=>l[v.i]);
+  const z0=Math.min(...zs),z1=Math.max(...zs),w0=Math.min(...ws),w1=Math.max(...ws);
+  const sc=Math.min((W-2*pad)/Math.max(z1-z0,1),(H-2*pad-14)/Math.max(w1-w0,1));
+  const X=z=>pad+(z-z0)*sc, Y=w=>y0+H-pad-(w-w0)*sc;
+  const h2=hull(loc.map(l=>[l[0],l[v.i]]));
+  x.beginPath();h2.forEach((p,i)=>i?x.lineTo(X(p[0]),Y(p[1])):x.moveTo(X(p[0]),Y(p[1])));x.closePath();
+  x.fillStyle=v.c+'22';x.fill();x.strokeStyle=v.c;x.lineWidth=1.5;x.stroke();
+  // линии резов
+  x.strokeStyle='#ff5fd2';x.setLineDash([4,3]);
+  b.faces.filter(f=>f.tag==='cut').forEach(f=>{const a=f.pts[0],c2=f.pts[1];
+   const da=a.clone().sub(m.A),dc=c2.clone().sub(m.A);
+   x.beginPath();x.moveTo(X(da.dot(m.fr.z)),Y(da.dot(m.fr[v.i==='x'?1:2])));x.lineTo(X(dc.dot(m.fr.z)),Y(dc.dot(m.fr[v.i==='x'?1:2])));x.stroke()});
+  x.setLineDash([]);x.fillStyle='#8ba3c7';x.font='10px JetBrains Mono';x.fillText(v.t,pad,y0+14);
+  x.fillText(`L заг=${fmt(b.Lstock)}`,W-110,y0+14)});
+ // сечение
+ x.strokeStyle='#ffb020';x.strokeRect(cv.width-70,cv.height-60,40,40);x.strokeRect(cv.width-70+ m.sec.t,cv.height-60+m.sec.t,40-2*m.sec.t,40-2*m.sec.t);
+ x.fillStyle='#8ba3c7';x.fillText('сечение',cv.width-70,cv.height-66)}
+/* ---------- таблица ---------- */
+function renderTable(){const t=$('#tbl');
+ t.innerHTML='<tr><th>Имя</th><th>Тип</th><th>Сечение</th><th>L заг</th><th>Масса</th><th>Резы α°@φ°</th></tr>'+
+ BUILT.map(b=>`<tr data-id="${b.m.id}"><td>${b.m.name}</td><td>${LABEL[b.m.type]}</td><td>${b.m.sec.h}×${b.m.sec.w}×${b.m.sec.t}</td><td>${fmt(b.Lstock)}</td><td>${b.mass.toFixed(2)}</td><td>${b.cuts.map(c=>c.alpha+'@'+c.phi).join(' ')||'—'}</td></tr>`).join('');
+ t.querySelectorAll('tr[data-id]').forEach(tr=>tr.onclick=()=>select(+tr.dataset.id))}
+/* ---------- экспорт ---------- */
+function stlOf(b){let s='solid '+b.m.name+'\n';for(const f of b.faces){const p=f.pts;const n=f.n||p[1].clone().sub(p[0]).cross(p[2].clone().sub(p[0])).normalize();
+ for(let i=1;i<p.length-1;i++){s+=`facet normal ${n.x} ${n.y} ${n.z}\nouter loop\n`;[p[0],p[i],p[i+1]].forEach(v=>s+=`vertex ${v.x} ${v.y} ${v.z}\n`);s+='endloop\nendfacet\n'}}
+ return s+'endsolid\n'}
+function dl(name,text,mime){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:mime||'text/plain'}));a.download=name;a.click()}
+$('#bStlEl').onclick=()=>{const b=BUILT.find(x=>x.m.id===SEL);if(b)dl(b.m.name+'.stl',stlOf(b))};
+$('#bObjEl').onclick=()=>{const b=BUILT.find(x=>x.m.id===SEL);if(b)dl(b.m.name+'.obj',objOf([b]))};
+function objOf(list){let s='# adapter solid tubes\n',off=1;for(const b of list){s+='g '+b.m.name+'\n';const vs=[];
+ b.faces.forEach(f=>f.pts.forEach(p=>vs.push(p)));vs.forEach(p=>s+=`v ${p.x} ${p.y} ${p.z}\n`);
+ let k=off;b.faces.forEach(f=>{s+='f';for(let i=0;i<f.pts.length;i++)s+=' '+(k+i);s+='\n';k+=f.pts.length});off=k}return s}
+$('#bStlAll').onclick=()=>dl('model.stl',BUILT.map(stlOf).join(''));
+$('#bObjAll').onclick=()=>dl('model.obj',objOf(BUILT));
+$('#bCsv').onclick=()=>{let s='Имя;Тип;Сечение;h;w;t;L_заг;Масса_кг;Резы\n';
+ BUILT.forEach(b=>{s+=`${b.m.name};${LABEL[b.m.type]};${b.m.sec.name||''};${b.m.sec.h};${b.m.sec.w};${b.m.sec.t};${Math.round(b.Lstock)};${b.mass.toFixed(2)};${b.cuts.map(c=>`${c.alpha}@${c.phi}(${c.by})`).join(' ')}\n`});
+ dl('cutlist.csv','\ufeff'+s,'text/csv')};
+$('#bRep').onclick=()=>dl('report.json',JSON.stringify({variant:$('#variant').value,gap:$('#gap').value,
+ elements:BUILT.map(b=>({name:b.m.name,type:b.m.type,sec:b.m.sec,Lstock:+b.Lstock.toFixed(1),mass:+b.mass.toFixed(3),cuts:b.cuts,notes:b.notes}))},null,1));
+/* ---------- загрузка ---------- */
+function load(json){MODEL=typeof json==='string'?JSON.parse(json):json;build()}
+$('#bLoad').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>load(r.result);r.readAsText(f)};
+const vp=$('#vp');vp.addEventListener('dragover',e=>{e.preventDefault();$('#drop').classList.add('on')});
+vp.addEventListener('dragleave',()=>$('#drop').classList.remove('on'));
+vp.addEventListener('drop',e=>{e.preventDefault();$('#drop').classList.remove('on');const f=e.dataTransfer.files[0];if(f){const r=new FileReader();r.onload=()=>load(r.result);r.readAsText(f)}});
+/* ---------- UI параметров ---------- */
+function defsUI(){$('#defs').innerHTML=Object.keys(DEF).map(k=>`<div class="row"><label>${LABEL[k]}</label><input data-def="${k}" value="${DEF[k]}"></div>`).join('');
+ $('#defs').querySelectorAll('input').forEach(i=>i.onchange=()=>{DEF[i.dataset.def]=i.value;if(MODEL)build()});
+ $('#secEdit').innerHTML=Object.keys(DEF).map(k=>`<option value="${k}">${LABEL[k]}</option>`).join('');
+ secUI()}
+$('#secEdit').onchange=secUI;
+function secUI(){const k=$('#secEdit').value;const o=SECOVR[k]||parseSec(DEF[k],k);$('#secH').value=o.h;$('#secW').value=o.w;$('#secT').value=o.t;$('#secR').value=o.rot||0}
+$('#bApplySec').onclick=()=>{const k=$('#secEdit').value;SECOVR[k]={h:+$('#secH').value,w:+$('#secW').value,t:+$('#secT').value,rot:+$('#secR').value};if(MODEL)build()};
+['variant','gap','dens'].forEach(id=>$('#'+id).onchange=()=>{if(MODEL)build()});
+/* ---------- демо (как на рисунке) ---------- */
+$('#bDemo').onclick=()=>{const N=[];const R=[];let id=1;const n=(x,y,z)=>{N.push({id,p:[x,y,z],type:'node',host:null});return id++};
+ const r=(a,b,t,sec)=>R.push({id:id++,a,b,type:t,sec,name:t+'-'+id});
+ const y=0;const b0=n(0,y,0),b1=n(3000,y,0),b2=n(6000,y,0);const t0=n(0,y,1000),t1=n(3000,y,1000),t2=n(6000,y,1000);
+ r(b0,b2,'bottom','rhs_80x40x3');r(t0,t2,'top','shs_60x60x3');
+ r(b0,t0,'post','shs_60x60x3');r(b1,t1,'post','shs_60x60x3');r(b2,t2,'post','shs_60x60x3');
+ r(b1,t0,'diag','shs_50x50x2');r(t0,b1,'diag','shs_50x50x2');
+ r(b1,t1,'diag','shs_50x50x2');r(t1,b2,'diag','shs_50x50x2');r(b2,t1,'diag','shs_50x50x2');
+ load({v:1,name:'Демо',nodes:N,rods:R,planes:[],groups:[],hidden:[],measures:[],views:[]})};
+init3D();defsUI();
+</script>
+</body>
+</html>

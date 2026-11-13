@@ -291,3 +291,4 @@ body.dragging #vp canvas{cursor:grabbing}
 #status #calcRead:empty{display:none}
 .mono{font-family:var(--mono)}
 body.app-loads #toolbar{display:none!important}
+table.calcTab tr.grp td{background:rgba(255,176,32,.08);text-align:left;border-top:1px solid var(--l)}
