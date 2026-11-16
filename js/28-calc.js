@@ -418,7 +418,7 @@ function autoSections(){
   let i=cands.findIndex(c=>c.id===best);
   if(i<0){const dflt=SEC_DEFAULTS[t];i=cands.findIndex(c=>c.id===dflt);if(i<0)i=0}
   cur[t]=cands[i].id;ix[t]=i});
- const steel=()=>{let m=0,c=0;M.rods.forEach(r=>{const s=byId.get(r.sec);if(s){m+=s.mass_kg_m*rodLen(r)/1000;c+=(s.price_rub_m||0)*rodLen(r)/1000}});return{m,c}};
+ const steel=()=>{let m=0,c=0;M.rods.forEach(r=>{const s=rodSec(r);if(s){m+=s.mass_kg_m*rodLen(r)/1000;c+=(s.price_rub_m||0)*rodLen(r)/1000}});return{m,c}};
  const t0=steel();
  const apply=()=>M.rods.forEach(r=>r.sec=cur[r.type]);
  const evalT=R=>{const u={},d={};
@@ -460,8 +460,8 @@ function autoSections(){
  afterChange();
  drawCalc();renderCalcResults();
  const etR=evalT(R);
- const list=(()=>{const m={};M.rods.forEach(r=>{m[r.type]=r.sec});
-  return Object.keys(m).map(t=>{const s=byId.get(m[t]);const uB=u0[t]||0,uA=etR.u[t]||0;
+ const list=(()=>{const m={};M.rods.forEach(r=>{m[r.type]=rodSec(r)});
+  return Object.keys(m).map(t=>{const s=m[t];const uB=u0[t]||0,uA=etR.u[t]||0;
    return `${(TYPES[t]||{}).prefix||t}: ${s?s.name:'—'} (${uB.toFixed(2)}→${uA.toFixed(2)})`}).join(' • ')})();
  const maxUf=Math.max(...Object.values(etR.u))||0;
  const el=$('#calcOut');
