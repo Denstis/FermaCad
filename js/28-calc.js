@@ -1,7 +1,7 @@
 /* ==================== CALC: FEM 3D frame, SP20 loads, SP16 checks, heatmaps, deflection, cut, report ==================== */
 'use strict';
 let appMode='model';
-const calc={res:null,byId:new Map(),_u:null,show:'ur',deflScale:80,deflAuto:true,showDefl:true,palMM:false,optDefl:true,optCrit:'mass',factor:1,
+const calc={res:null,byId:new Map(),_u:null,show:'ur',deflScale:80,deflAuto:true,showDefl:true,palMM:false,optDefl:true,optCrit:'mass',optTarget:.7,factor:1,
  loads:{dead:true,snow:true,wind:true,live:true,snowRegion:3,windRegion:3,terrain:'C',liveQ:.4}};
 const SG_KPA={1:.5,2:1,3:1.5,4:2,5:2.5,6:3,7:3.5,8:4};
 const W0_KPA={1:.17,2:.25,3:.32,4:.4,5:.48,6:.6,7:.73,8:.9};
@@ -396,7 +396,7 @@ function renderCalcResults(){const R=calc.res,el=$('#calcOut');if(!el||!R)return
  <table class="calcTab"><tr><th>стержень</th><th>сечение</th><th>UR</th><th>f, мм</th></tr>
  ${top.map(r=>`<tr class="${r.ur>1?'bad':''}" data-cr="${r.id}"><td>${esc(r.name)}</td><td>${esc(r.secName)}</td><td><b>${r.ur.toFixed(2)}</b></td><td>${r.defl.toFixed(1)}</td></tr>`).join('')}</table>`;
  el.querySelectorAll('[data-cr]').forEach(tr=>tr.onclick=()=>{const v=/^\d+$/.test(tr.dataset.cr)?+tr.dataset.cr:tr.dataset.cr;selectOnly('rod',v);selectionChanged()})}
-/* ---------- авто-подбор сечений труб по типам стержней (жадный, с полными пересчётами) ---------- */
+/* ---------- авто-подбор сечений труб по типам: «равная прочность» к целевому UR, полные пересчёты ---------- */
 function autoSections(){
  if(!M.rods.size){toast('Нет стержней',{type:'warn'});return}
  const byId=new Map(NR_SECTIONS.map(s=>[s.id,s]));
@@ -406,38 +406,72 @@ function autoSections(){
  const orig=new Map([...M.rods].map(([k,r])=>[k,r.sec]));
  const restore=()=>orig.forEach((s,k)=>{const r=M.rods.get(k);if(r)r.sec=s});
  pushUndo();
- /* старт от самого лёгкого трубного профиля для всех типов; подъём до прохождения проверок */
- const cur={},idx={};
- [...new Set([...M.rods.values()].map(r=>r.type))].forEach(t=>{cur[t]=cands[0].id;idx[t]=0});
+ /* целевое «равное прочность» (ползунок макс. использования T):
+    типы с UR>T или f>L/200 поднимаем на шаг (худший первым);
+    самый разгруженный тип пробуем опустить на шаг и оставляем, если весь
+    каркас снова проходит; прогиб f<=L/200 — жёсткое ограничение. */
+ const T=calc.optTarget;
+ const cur={},ix={};
+ const cntMap={};
+ M.rods.forEach(r=>{(cntMap[r.type]=cntMap[r.type]||new Map()).set(r.sec,(cntMap[r.type].get(r.sec)||0)+1)});
+ Object.keys(cntMap).forEach(t=>{const best=[...cntMap[t].entries()].sort((a,b)=>b[1]-a[1])[0][0];
+  let i=cands.findIndex(c=>c.id===best);
+  if(i<0){const dflt=SEC_DEFAULTS[t];i=cands.findIndex(c=>c.id===dflt);if(i<0)i=0}
+  cur[t]=cands[i].id;ix[t]=i});
  const steel=()=>{let m=0,c=0;M.rods.forEach(r=>{const s=byId.get(r.sec);if(s){m+=s.mass_kg_m*rodLen(r)/1000;c+=(s.price_rub_m||0)*rodLen(r)/1000}});return{m,c}};
  const t0=steel();
  const apply=()=>M.rods.forEach(r=>r.sec=cur[r.type]);
- let R=null,pass=false,it=0;const stuck=new Set();
- for(;it<45;it++){
-  apply();R=solveFrame();
-  if(R.err){restore();toast('Подбор прерван: '+R.err,{type:'warn'});return}
-  const bad=new Set();
+ const evalT=R=>{const u={},d={};
   R.res.forEach(rr=>{const rd=M.rods.get(+rr.id)||M.rods.get(rr.id);if(!rd)return;
-   if(rr.ur>1)bad.add(rd.type);
-   if(calc.optDefl&&rr.L>0&&rr.defl>rr.L/200)bad.add(rd.type)});
-  if(!bad.size){pass=true;break}
-  let adv=false;
-  bad.forEach(t=>{if(idx[t]<cands.length-1){idx[t]++;cur[t]=cands[idx[t]].id;adv=true;stuck.delete(t)}else stuck.add(t)});
-  if(!adv)break}
+   u[rd.type]=Math.max(u[rd.type]||0,rr.ur);
+   if(calc.optDefl&&rr.L>0)d[rd.type]=Math.max(d[rd.type]||0,rr.defl/(rr.L/200))});
+  return{u,d}};
+ const okAll=R=>{if(!R||R.err)return false;const et=evalT(R);
+  return Object.keys(et.u).every(t=>et.u[t]<=T+1e-9&&(et.d[t]||0)<=1+1e-9)};
+ apply();let R=solveFrame();
+ if(R.err){restore();toast('Подбор прерван: '+R.err,{type:'warn'});return}
+ const u0=evalT(R).u;
+ const _log=[];window._optLog=_log;
+ const locked=new Set();
+ let it=0,stuck=null;
+ for(;it<300;it++){
+  const et=evalT(R);const u=et.u,d=et.d;
+  const viol=Object.keys(u).map(t=>[t,Math.max(u[t]/T-1,(d[t]||0)-1)]).filter(x=>x[1]>1e-9).sort((a,b)=>b[1]-a[1]);
+  if(viol.length){const t=viol[0][0];
+   _log.push({ph:'up',t:(TYPES[t]||{}).prefix||t,ur:+u[t].toFixed(2),d:+(d[t]||0).toFixed(2),sec:cur[t]});
+   if(ix[t]<cands.length-1){ix[t]++;cur[t]=cands[ix[t]].id;locked.delete(t);
+    apply();R=solveFrame();
+    if(R.err){restore();toast('Подбор прерван: '+R.err,{type:'warn'});return}
+    continue}
+   stuck=t;break}
+  const down=Object.keys(u).filter(t=>ix[t]>0&&!locked.has(t)).sort((a,b)=>u[a]-u[b]);
+  if(!down.length)break;
+  const t=down[0];
+  ix[t]--;cur[t]=cands[ix[t]].id;apply();const Rt=solveFrame();
+  if(Rt&&!Rt.err&&okAll(Rt)){R=Rt;_log.push({ph:'dn',t:(TYPES[t]||{}).prefix||t,ok:1,sec:cur[t]});continue}
+  ix[t]++;cur[t]=cands[ix[t]].id;locked.add(t);_log.push({ph:'dn',t:(TYPES[t]||{}).prefix||t,ok:0})}
  apply();R=solveFrame();
  if(R.err){restore();toast('Подбор прерван: '+R.err,{type:'warn'});return}
+ const etF=evalT(R);
+ const pass=Object.keys(etF.u).every(t=>etF.u[t]<=T+1e-9&&(etF.d[t]||0)<=1+1e-9);
+ if(!pass){restore();R=solveFrame();if(R.err){toast('Подбор не удался',{type:'warn'});return}}
  const t1=steel();
  calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));
  afterChange();
  drawCalc();renderCalcResults();
- const types=Object.keys(cur).map(t=>`${(TYPES[t]||{}).prefix||t}: ${byId.get(cur[t]).name}`).join(' • ');
+ const etR=evalT(R);
+ const list=(()=>{const m={};M.rods.forEach(r=>{m[r.type]=r.sec});
+  return Object.keys(m).map(t=>{const s=byId.get(m[t]);const uB=u0[t]||0,uA=etR.u[t]||0;
+   return `${(TYPES[t]||{}).prefix||t}: ${s?s.name:'—'} (${uB.toFixed(2)}→${uA.toFixed(2)})`}).join(' • ')})();
+ const maxUf=Math.max(...Object.values(etR.u))||0;
  const el=$('#calcOut');
- if(el)el.insertAdjacentHTML('afterbegin',`<div class="kv"><span>Подбор</span><b style="color:${pass?'#7fe8b8':'#ff7a6a'}">${pass?'оптимально найдено':'профиля, удовлетворяющего критериям, не найдено'}</b></div>
+ if(el)el.insertAdjacentHTML('afterbegin',`<div class="kv"><span>Подбор (цель UR ≤ ${T.toFixed(2)})</span><b style="color:${pass?'#7fe8b8':'#ff7a6a'}">${pass?'равная прочность достигнута':(stuck?`не выровнять: перегруз ${(TYPES[stuck]||{}).prefix||stuck} на вершине каталога`:'исходные сечения восстановлены')}</b></div>
   <div class="kv"><span>Сталь</span><b>${t0.m.toFixed(0)} → ${t1.m.toFixed(0)} кг (${t0.m?((t1.m/t0.m-1)*100).toFixed(1):'0'} %)</b></div>
   <div class="kv"><span>Металл по цене</span><b>${Math.round(t0.c).toLocaleString('ru')} → ${Math.round(t1.c).toLocaleString('ru')} ₽</b></div>
-  <div class="kv"><span>UR max / итераций</span><b>${R.maxUR.toFixed(2)} / ${it}</b></div>
-  <div class="hint2">${esc(types)}${stuck.size?` • не подобрались: ${[...stuck].map(t=>(TYPES[t]||{}).prefix||t).join(', ')}`:''} • Ctrl+Z — отменить</div>`);
- toast(`Подбор сечений: ${pass?'пройден':'не завершён'} • сталь ${t0.m.toFixed(0)}→${t1.m.toFixed(0)} кг • UR max ${R.maxUR.toFixed(2)}`,
+  <div class="kv"><span>UR max / прогиб max</span><b>${maxUf.toFixed(2)} / ${R.maxD.toFixed(1)} мм</b></div>
+  <div class="kv"><span>Итераций пересчёта</span><b>${it}</b></div>
+  <div class="hint2">${esc(list)} • Ctrl+Z — отменить</div>`);
+ toast(`Подбор сечений: ${pass?'равная прочность':'исходные сечения восстановлены'} • сталь ${t1.m.toFixed(0)} кг • UR max ${maxUf.toFixed(2)}`,
   {type:pass?'ok':'warn',timeout:8000})}
 /* ---------- panel ---------- */
 function calcPaneHTML(){const l=calc.loads;
@@ -456,9 +490,10 @@ function calcPaneHTML(){const l=calc.loads;
  <div class="btnrow"><button class="btn gold" id="btnCalc">РАСЧЁТ</button><button class="btn" id="btnCalcClear">СБРОС</button></div>
  <div class="psect">ПОДБОР СЕЧЕНИЙ (ТРУБЫ, ПО ТИПАМ)</div>
  <div class="crow"><label>Критерий</label><select id="selOptCrit">${opt('mass',calc.optCrit,'минимум массы')}${opt('cost',calc.optCrit,'минимум стоимости')}</select></div>
+ <div class="crow"><label>Макс. использование</label><div class="cval"><input type="range" id="rngOptT" min="30" max="100" step="5" value="${Math.round(calc.optTarget*100)}" style="width:90px"><span class="mono" id="dOptT">${calc.optTarget.toFixed(2)}</span></div></div>
  <label class="ck"><input type="checkbox" id="ckOptDefl" ${calc.optDefl?'checked':''}> Ограничение прогиба f ≤ L/200</label>
  <div class="btnrow"><button class="btn" id="btnOptSec">ПОДБОР СЕЧЕНИЙ</button></div>
- <div class="hint2">Жадный перебор по типам: для каждого типа стержней подбирается самое лёгкое (дешёвое) трубное сечение из каталога с полным пересчётом каркаса на каждом шаге, пока UR ≤ 1 и прогибы проходят. Отмена — Ctrl+Z.</div>
+ <div class="hint2">Равная прочность: ползунок «Макс. использование» задаёт целевой верх UR (0.3–1.0). Перегруженные типы поднимаются на шаг вверх, самый разгруженный пробно опускается — и остаётся, если весь каркас снова проходит. Прогиб f ≤ L/200 — жёсткое ограничение. Полный пересчёт каркаса на каждом шаге. Отмена — Ctrl+Z.</div>
  <div class="psect">ОТОБРАЖЕНИЕ</div>
  <div class="crow"><label>Тепловая карта</label><select id="selShow">
   <option value="ur" ${calc.show==='ur'?'selected':''}>UR — общая нагрузка</option>
@@ -487,6 +522,7 @@ function bindCalcPane(){const W=(id,ev,fn)=>{const e=$(id);if(e)e.addEventListen
  W('#btnOptSec','click',()=>autoSections());
  W('#ckOptDefl','change',e=>{calc.optDefl=e.target.checked});
  W('#selOptCrit','change',e=>{calc.optCrit=e.target.value});
+ W('#rngOptT','input',e=>{calc.optTarget=+e.target.value/100;const s=$('#dOptT');if(s)s.textContent=calc.optTarget.toFixed(2)});
  W('#ckDefl','change',e=>{calc.showDefl=e.target.checked;if(calc.res)drawCalc()});
  W('#ckDeflAuto','change',e=>{calc.deflAuto=e.target.checked;if(calc.res)drawCalc()});
  W('#rngDefl','input',e=>{calc.deflAuto=false;const ca=$('#ckDeflAuto');if(ca)ca.checked=false;calc.deflScale=+e.target.value;$('#dScaleVal').textContent=calc.deflScale;if(calc.res)drawCalc()})}
@@ -543,10 +579,20 @@ function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?
  if(pair){
   if(pair.some(q=>ang(v,q.d)>155)){const br=inc.filter(q=>pair.indexOf(q)<0);
    return{txt:br.length?`без запила (основной; ветвь ${br.map(q=>q.o.name).join(', ')})`:'без запила (проходной)',e:0}}
-  const beta=Math.min(...pair.map(q=>ang(v,q.d)));
-  const main=rodSec(pair[0].o).mass_kg_m>=rodSec(pair[1].o).mass_kg_m?pair[0]:pair[1];
-  const hm=rodSec(main.o).h_mm||60;
-  return{txt:`T-подрез по осн. ${main.o.name}`,e:Math.min((hm/2)/Math.sin(Math.max(beta,20)*Math.PI/180),L*0.4)}}
+  const beta=Math.max(Math.min(...pair.map(q=>ang(v,q.d))),20);
+  const mi=rodSec(pair[0].o).mass_kg_m>=rodSec(pair[1].o).mass_kg_m?0:1;
+  const main=pair[mi],ms=rodSec(main.o);
+  const dM=cutN([main.d[0],main.d[1],main.d[2]]);
+  let m2=cutN([-dM[1],dM[0],0]);if(!m2)m2=[1,0,0];
+  const m3=cutN([dM[1]*m2[2]-dM[2]*m2[1],dM[2]*m2[0]-dM[0]*m2[2],dM[0]*m2[1]-dM[1]*m2[0]]);
+  const al=Math.abs(v[0]*m2[0]+v[1]*m2[1]+v[2]*m2[2]),ga=Math.abs(v[0]*m3[0]+v[1]*m3[1]+v[2]*m3[2]);
+  const Wm=(ms.kind==='rhs'?ms.h_mm:ms.b_mm)||60,Hm=(ms.kind==='rhs'?ms.b_mm:ms.h_mm)||60;
+  const tA=ms.t_mm||4;
+  const sOut=Math.min(al>1e-6?Wm/(2*al):1e9,ga>1e-6?Hm/(2*ga):1e9);
+  const sFar=Math.min(al>1e-6?(Wm-2*tA)/(2*al):1e9,ga>1e-6?(Hm-2*tA)/(2*ga):1e9);
+  const nest=Math.min(b,h)<=Math.min(Wm-2*tA,Hm-2*tA)+.5&&Math.max(b,h)<=Math.max(Wm-2*tA,Hm-2*tA)+.5;
+  return nest?{txt:`вложено в осн. ${main.o.name}: сечение ${b}×${h} в полость ${Wm-2*tA}×${Hm-2*tA}, глубина ${Math.round(sFar)} мм`,e:Math.min(sFar,L*0.4)}
+   :{txt:`T-подрез по осн. ${main.o.name}: ${b}×${h} не входит в полость ${Wm-2*tA}×${Hm-2*tA} — впритык к стенке`,e:Math.min(sOut,L*0.4)}}
  const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
  const al=ang(v,m.d),n=cutN([v[0]+m.d[0],v[1]+m.d[1],v[2]+m.d[2]]);
  if(!n)return{txt:'без запила',e:0};

@@ -3,7 +3,6 @@
 let fullModelOn=false;
 const WELD_HEX=0xff3b30;
 function fN(u){const l=Math.hypot(u[0],u[1],u[2]);return l>1e-9?[u[0]/l,u[1]/l,u[2]/l]:null}
-function fP(v){return[v.x,v.y,v.z]}
 function fullSegs(){const out=[];
  M.rods.forEach(r=>{const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
   const pts=[a.p,...hostedNodes(r.id).map(n=>n.p),b.p];
@@ -37,10 +36,25 @@ function endInfo(S,X,v,nid,segAt){
   if(ang(inc[i].d,inc[j].d)>155){pair=[inc[i],inc[j]];break}
  if(pair){
   if(pair.some(q=>ang(v,q.d)>155))return{kind:'main'};
-  const beta=Math.min(...pair.map(q=>ang(v,q.d)));
-  const mm=pair.map(q=>rodSec(q.seg.r)),main=mm[0].mass_kg_m>=mm[1].mass_kg_m?mm[0]:mm[1];
-  const e=Math.min((main.h_mm||60)/2/Math.sin(Math.max(beta,20)*Math.PI/180),S.L*0.4);
-  return{kind:'T',e}}
+  const beta=Math.max(Math.min(...pair.map(q=>ang(v,q.d))),20);
+  const mm=pair.map(q=>rodSec(q.seg.r)),mi=mm[0].mass_kg_m>=mm[1].mass_kg_m?0:1,main=mm[mi];
+  /* коллизии с учётом габарита: короб main в плоскости сечения (m2 — горизонталь,
+     m3 — сторона 'b' у rhs по конвенции вертикали); depth по лучу v через box:
+     sOut — наружная стенка; sFar — противоположная внутренняя стенка полости.
+     Если сечение ветви влезает в полость main (hollow) — это ВЛОЖЕНИЕ (nest):
+     ветва уходит в полость на глубину до внутренней стенки; иначе — стык впритык (T). */
+  const dM=fN(pair[mi].d);
+  let m2=fN([-dM[1],dM[0],0]);if(!m2)m2=[1,0,0];
+  const m3=fN([dM[1]*m2[2]-dM[2]*m2[1],dM[2]*m2[0]-dM[0]*m2[2],dM[0]*m2[1]-dM[1]*m2[0]]);
+  const al=Math.abs(v[0]*m2[0]+v[1]*m2[1]+v[2]*m2[2]),ga=Math.abs(v[0]*m3[0]+v[1]*m3[1]+v[2]*m3[2]);
+  const Wm=(main.kind==='rhs'?main.h_mm:main.b_mm)||60,Hm=(main.kind==='rhs'?main.b_mm:main.h_mm)||60;
+  const tA=main.t_mm||4;
+  const sOut=Math.min(al>1e-6?Wm/(2*al):1e9,ga>1e-6?Hm/(2*ga):1e9);
+  const sFar=Math.min(al>1e-6?(Wm-2*tA)/(2*al):1e9,ga>1e-6?(Hm-2*tA)/(2*ga):1e9);
+  const sb=rodSec(S.r),bB=sb.b_mm||60,hB=sb.h_mm||60;
+  const nest=Math.min(bB,hB)<=Math.min(Wm-2*tA,Hm-2*tA)+.5&&Math.max(bB,hB)<=Math.max(Wm-2*tA,Hm-2*tA)+.5;
+  const e=Math.min(nest?sFar:sOut,S.L*0.4);
+  return{kind:nest?'nest':'T',e,nest,sOut:Math.min(sOut,S.L*0.4)}}
  const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
  const al=ang(v,m.d),nb=fN([v[0]+m.d[0],v[1]+m.d[1],v[2]+m.d[2]]);
  if(!nb)return{kind:'free'};
@@ -62,12 +76,15 @@ function buildFullModel(){
   const s=rodSec(S.r);
   const vA=fN([S.p0.x-S.p1.x,S.p0.y-S.p1.y,S.p0.z-S.p1.z]),vB=fN([S.p1.x-S.p0.x,S.p1.y-S.p0.y,S.p1.z-S.p0.z]);
   const EA=endInfo(S,S.p0,vA,S.na,segAt),EB=endInfo(S,S.p1,vB,S.nb,segAt);
+  /* глубина вложения/стыка: ветва не выпирает за main — призма обрезается по стенке */
+  const trimA=(EA.kind==='T'||EA.kind==='nest')?Math.min(EA.e||0,S.L*0.45):0;
+  const trimB=(EB.kind==='T'||EB.kind==='nest')?Math.min(EB.e||0,S.L*0.45):0;
   /* базис сечения: x(b)->e2, y(h)->e3 (det=+1); rhs — контур поворотом 90°: широкая сторона b по e3 (вертикаль) */
   let e2=fN([-vB[1],vB[0],0]);if(!e2)e2=[1,0,0];
   const e3=fN([vB[1]*e2[2]-vB[2]*e2[1],vB[2]*e2[0]-vB[0]*e2[2],vB[0]*e2[1]-vB[1]*e2[0]]);
   const rhs=s.kind==='rhs';
   /* ПОЛНЫЙ профиль без резки: призма от узла до узла, плоские торцы */
-  const depth=S.L;
+  const depth=S.L-trimA-trimB;
   const cts=secContours(s);
   const all=rhs?cts.map(ct=>ct.map(([x,y])=>[y,x])):cts;
   const top=all.map(ct=>ct.map(([x,y])=>[x,y,depth]));
@@ -92,16 +109,17 @@ function buildFullModel(){
   mesh.userData={rn:S.r.name,kind:s.kind,b:s.b_mm,h:s.h_mm};
   const rot=new THREE.Matrix4().makeBasis(V3(e2[0],e2[1],e2[2]),V3(e3[0],e3[1],e3[2]),V3(vB[0],vB[1],vB[2]));
   mesh.quaternion.setFromRotationMatrix(rot);
-  mesh.position.copy(S.p0);
+  mesh.position.set(S.p0.x+vB[0]*trimA,S.p0.y+vB[1]*trimA,S.p0.z+vB[2]*trimA);
   window._gFull.add(mesh);
   /* ---- сварные контуры: полные сечения на концах с реальным стыком ---- */
   const contours=all;
-  const mkWeld=(E,X,v)=>{
+  const mkWeld=(E,X,v,trim)=>{
    if(E.kind==='pass'||E.kind==='main'||E.kind==='free')return;
+   const t=trim||0;
    contours.forEach(ct=>{
-    const pts3=ct.map(([x,y])=>[X.x+x*e2[0]+y*e3[0]+v[0]*1.2,X.y+x*e2[1]+y*e3[1]+v[1]*1.2,X.z+x*e2[2]+y*e3[2]+v[2]*1.2]);
+    const pts3=ct.map(([x,y])=>[X.x-v[0]*t+x*e2[0]+y*e3[0]+v[0]*1.2,X.y-v[1]*t+x*e2[1]+y*e3[1]+v[1]*1.2,X.z-v[2]*t+x*e2[2]+y*e3[2]+v[2]*1.2]);
     window._gWeld.add(weldLine(pts3))})};
-  mkWeld(EA,S.p0,vA);mkWeld(EB,S.p1,vB)}
+  mkWeld(EA,S.p0,vA,trimA);mkWeld(EB,S.p1,vB,trimB)}
  /* butt-швы между сегментами одного стержня: контуры уже нарисованы с обеих сторон прохода (kind pass пропускает): рисуем отдельно */
  M.rods.forEach(r=>{const ids=hostedNodes(r.id);
   ids.forEach(n=>{const s=rodSec(r);const pts=[M.nodes.get(r.a).p,...ids.map(k=>k.p),M.nodes.get(r.b).p];

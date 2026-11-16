@@ -2,3 +2,9 @@ GuiRoof.rar
 *.tmp
 Thumbs.db
 desktop.ini
+_samples/
+tmp-model.json
+*.rar
+*.jpg
+*.png
+node_modules/
