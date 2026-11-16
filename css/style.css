@@ -292,3 +292,10 @@ body.dragging #vp canvas{cursor:grabbing}
 .mono{font-family:var(--mono)}
 body.app-loads #toolbar{display:none!important}
 table.calcTab tr.grp td{background:rgba(255,176,32,.08);text-align:left;border-top:1px solid var(--l)}
+.shotPrev{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0}
+.shotPrev figure{margin:0;background:#fff;border-radius:4px;padding:4px}
+.shotPrev img{width:100%;display:block;border-radius:2px}
+.shotPrev figcaption{font-size:10px;color:#555;text-align:center;padding-top:3px}
+.shotPrev figure:last-child:nth-child(odd){grid-column:1/-1}
+
+#modalCard.wide{width:min(1020px,96vw)}

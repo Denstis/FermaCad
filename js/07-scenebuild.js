@@ -70,7 +70,8 @@ function rebuildScene(){clearGroup(gNodes);clearGroup(gRods);clearGroup(gPlanes)
  const cn=ctxNodeIds(),cr=ctxRodIds();const now=performance.now();
  buildNodeObjects(cn,now);buildRodObjects(cr);buildPlaneObjects();
  scene.updateMatrixWorld(true);
- applySelMats();updateSelBox();rebuildDims();buildMeasures();updateShadowFrustum();shadowsDirty=true}
+ applySelMats();updateSelBox();rebuildDims();buildMeasures();updateShadowFrustum();shadowsDirty=true;
+ if(window.buildFullModel)buildFullModel()}
 function refreshNodePos(id){const o=nodeObjs.get(id),n=M.nodes.get(id);if(o&&n)o.g.position.copy(n.p)}
 function refreshRodGeom(id){const o=rodObjs.get(id),r=M.rods.get(id);if(!o||!r)return;const pts=nodesAlong(r);const rad=TYPES[r.type].r*params.rodScale;
  for(let i=0;i<o.segs.length&&i<pts.length-1;i++)setCyl(o.segs[i],pts[i],pts[i+1],rad);

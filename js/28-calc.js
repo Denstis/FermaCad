@@ -1,7 +1,7 @@
 /* ==================== CALC: FEM 3D frame, SP20 loads, SP16 checks, heatmaps, deflection, cut, report ==================== */
 'use strict';
 let appMode='model';
-const calc={res:null,byId:new Map(),_u:null,show:'ur',deflScale:80,showDefl:true,factor:1,
+const calc={res:null,byId:new Map(),_u:null,show:'ur',deflScale:80,deflAuto:true,showDefl:true,palMM:false,optDefl:true,optCrit:'mass',factor:1,
  loads:{dead:true,snow:true,wind:true,live:true,snowRegion:3,windRegion:3,terrain:'C',liveQ:.4}};
 const SG_KPA={1:.5,2:1,3:1.5,4:2,5:2.5,6:3,7:3.5,8:4};
 const W0_KPA={1:.17,2:.25,3:.32,4:.4,5:.48,6:.6,7:.73,8:.9};
@@ -44,17 +44,25 @@ function slopeFamilies(){const mY=[0,1,0],planes=[],rp=[],out=[];let ridgeZ=-1e9
    if(f.rods.length>=2&&sc<bs){bs=sc;skin=f}});
    if(!skin)return}
   const v=GVEC.norm(GVEC.cross(p.n,skin.d));if(!v)return;
+  const up=GVEC.norm([v[0],v[1],0]);if(!up)return;
+  /* плановые границы ската (карниз..конёк) по всем стержням плоскости:
+     полосы приведения покрывают план ската РОВНО ОДИН РАЗ (СП 20: S на 1 м² проекции) */
+  let tmin=1e18,tmax=-1e18;
+  p.ids.forEach(id=>{const r=M.rods.get(id);if(!r)return;const a=M.nodes.get(r.a).p,b=M.nodes.get(r.b).p;
+   [a,b].forEach(pn=>{const t=GVEC.dot(up,GVEC.P(pn));if(t<tmin)tmin=t;if(t>tmax)tmax=t})});
+  const span=tmax-tmin;
   const lines=[];
-  skin.rods.forEach(id=>{const r=M.rods.get(id),a=M.nodes.get(r.a).p,pos=GVEC.dot(v,GVEC.P(a));
+  skin.rods.forEach(id=>{const r=M.rods.get(id),a=M.nodes.get(r.a).p,pos=GVEC.dot(up,GVEC.P(a));
    let L=lines.find(l=>Math.abs(l.pos-pos)<100);
    if(!L){L={pos,r:[]};lines.push(L)}L.r.push(id)});
   lines.sort((x,y)=>x.pos-y.pos);
   lines.forEach((L,i)=>{let bw;
-   if(lines.length===1)bw=6000;
-   else if(i===0)bw=(lines[1].pos-L.pos)/2;
-   else if(i===lines.length-1)bw=(L.pos-lines[i-1].pos)/2;
+   if(lines.length===1)bw=span;
+   else if(i===0)bw=(lines[1].pos-L.pos)/2+(L.pos-tmin);
+   else if(i===lines.length-1)bw=(L.pos-lines[i-1].pos)/2+(tmax-L.pos);
    else bw=(lines[i+1].pos-lines[i-1].pos)/2;
-   L.b=Math.max(1,Math.round(bw*p.n[2]))});
+   if(!(bw>1))bw=lines.length===1?6000:(lines[1].pos-lines[0].pos)/2;
+   L.b=Math.max(1,Math.round(bw))});
   out.push({n:p.n,mu:snowMu(Math.atan2(Math.hypot(p.n[0],p.n[1]),p.n[2])*180/Math.PI),lines})});
  return out}
 function framePlanes(){const planes=[];
@@ -101,11 +109,18 @@ function solveFrame(){
   hl.forEach(h=>{if(!M.rods.has(h.rod))return;let a=hostBy.get(h.rod);if(!a){a=[];hostBy.set(h.rod,a)}a.push({id:n.id,t:h.t})})});
  const parts=[];
  for(const r of M.rods.values()){const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)continue;
-  const hs=(hostBy.get(r.id)||[]).filter(h=>h.t>0.002&&h.t<0.998).sort((p,q)=>p.t-q.t);
-  if(!hs.length){parts.push(r);continue}
+  const v0=b.p.clone().sub(a.p),L0=v0.length();if(L0<10)continue;
+  const u0=v0.multiplyScalar(1/L0);
+  const hs=new Map();
+  (hostBy.get(r.id)||[]).forEach(h=>{if(h.t>0.002&&h.t<0.998)hs.set(h.id,h.t)});
+  M.nodes.forEach(n=>{if(n.id===r.a||n.id===r.b||hs.has(n.id))return;
+   const w=n.p.clone().sub(a.p),t=w.dot(u0)/L0;if(t<=0.002||t>=0.998)return;
+   if(w.clone().addScaledVector(u0,-t*L0).length()<25)hs.set(n.id,t)});
+  const hsl=[...hs.entries()].map(e2=>({id:e2[0],t:e2[1]})).sort((p,q)=>p.t-q.t);
+  if(!hsl.length){parts.push(r);continue}
   let prev=r.a,prevT=0;
-  hs.forEach((h,k)=>{parts.push({id:r.id+'#'+k,a:prev,b:h.id,sec:r.sec,mat:r.mat,type:r.type,name:r.name+'·'+(k+1),t0:prevT,t1:h.t});prev=h.id;prevT=h.t});
-  parts.push({id:r.id+'#'+hs.length,a:prev,b:r.b,sec:r.sec,mat:r.mat,type:r.type,name:r.name+'·'+(hs.length+1),t0:prevT,t1:1})}
+  hsl.forEach((h,k)=>{parts.push({id:r.id+'#'+k,a:prev,b:h.id,sec:r.sec,mat:r.mat,type:r.type,name:r.name+'·'+(k+1),t0:prevT,t1:h.t});prev=h.id;prevT=h.t});
+  parts.push({id:r.id+'#'+hsl.length,a:prev,b:r.b,sec:r.sec,mat:r.mat,type:r.type,name:r.name+'·'+(hsl.length+1),t0:prevT,t1:1})}
  const adj0=new Map();nodes0.forEach(n=>adj0.set(n.id,new Set()));
  for(const r of parts){if(adj0.has(r.a))adj0.get(r.a).add(r.b);if(adj0.has(r.b))adj0.get(r.b).add(r.a)}
  const nodes=nodes0.filter(n=>isSup(n)||adj0.get(n.id).size>0);
@@ -118,7 +133,7 @@ function solveFrame(){
  if(bad.length)return{err:'Компонент(ы) без опоры: '+bad.join('; ')+' — свяжите с каркасом/поставьте опоры'};
  const fmap=new Map();let nf=0;
  nodes.forEach((n,i)=>{if(isSup(n))return;for(let d=0;d<6;d++)fmap.set(i*6+d,nf++)});
- if(nf<6)return{err:'Расставьте опоры (нужно ≥2)'};
+ if(nodes.filter(isSup).length<2)return{err:'Расставьте опоры (нужно ≥2)'};
  const els=[];
  for(const r of parts){
   const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)continue;
@@ -133,18 +148,18 @@ function solveFrame(){
   kd(0,0,EA);kd(0,6,-EA);kd(6,0,-EA);kd(6,6,EA);
   kd(3,3,GJ);kd(3,9,-GJ);kd(9,3,-GJ);kd(9,9,GJ);
   const cx=p.Ix*E/L**3,cy=p.Iy*E/L**3;
-  [[2,4,8,10,cx,1],[1,5,7,11,cy,-1]].forEach(([A,B,C,D,c,sg])=>{const cL=c*sg*L,cLL=c*L*L;
-   kd(A,A,12*c);kd(A,B,cL);kd(A,C,-12*c);kd(A,D,cL);
-   kd(B,A,cL);kd(B,B,4*cLL);kd(B,C,-cL);kd(B,D,2*cLL);
-   kd(C,A,-12*c);kd(C,B,cL);kd(C,C,12*c);kd(C,D,cL);
-   kd(D,A,cL);kd(D,B,2*cLL);kd(D,C,cL);kd(D,D,4*cLL)});
+  [[1,5,7,11,cy,1],[2,4,8,10,cx,-1]].forEach(([A,B,C,D,c,sg])=>{const cL=c*L,cLL=c*L*L;
+   kd(A,A,12*c);kd(A,B,6*sg*cL);kd(A,C,-12*c);kd(A,D,6*sg*cL);
+   kd(B,A,6*sg*cL);kd(B,B,4*cLL);kd(B,C,-6*sg*cL);kd(B,D,2*cLL);
+   kd(C,A,-12*c);kd(C,B,-6*sg*cL);kd(C,C,12*c);kd(C,D,-6*sg*cL);
+   kd(D,A,6*sg*cL);kd(D,B,2*cLL);kd(D,C,-6*sg*cL);kd(D,D,4*cLL)});
   const R=[e1,e2,e3],CR=[e1,e2,e3].map(v=>[v.x,v.y,v.z]),T=new Float64Array(144);
   for(let b2=0;b2<2;b2++)for(let d=0;d<3;d++)for(let j=0;j<3;j++){T[(b2*6+d)*12+(b2*6+j)]=CR[d][j];T[(b2*6+3+d)*12+(b2*6+3+j)]=CR[d][j]}
   const Tk=new Float64Array(144),KE=new Float64Array(144);
   for(let i=0;i<12;i++)for(let j=0;j<12;j++){let v=0;for(let t=0;t<12;t++)v+=T[t*12+i]*k[t*12+j];Tk[i*12+j]=v}
   for(let i=0;i<12;i++)for(let j=0;j<12;j++){let v=0;for(let t=0;t<12;t++)v+=Tk[i*12+t]*T[t*12+j];KE[i*12+j]=v}
   els.push({r,a,b,L,p,E,Ry,R,T,KE,k,ia:idx.get(r.a),ib:idx.get(r.b),sec:s,secName:s.name,matName:m.name,qv:[0,0,0]})}
- if(!els.length)return{err:'Нет стержней'};
+ calc._elsN=els.length;if(!els.length)return{err:'Нет стержней'};
  const box=new THREE.Box3();nodes.forEach(n=>box.expandByPoint(n.p));
  const yMin=box.min.y,yMax=box.max.y;
  const L2=calc.loads,mult=calc.factor;
@@ -169,7 +184,8 @@ function solveFrame(){
    addLoad(e,[w0*ce(zmid,L2.terrain)*face*fb(e.a.p,e.b.p)*dz/e.L/1e6,0,0])});
   sfs.forEach(f=>{const cf=f.n[0]<0?0.8:-1.2;
    f.lines.forEach(L=>L.r.forEach(id=>{eL(id).forEach(e=>{
-    const zmid=(e.a.p.z+e.b.p.z)/2000,w=w0*ce(zmid,L2.terrain)*L.b/1e6;
+    const Lh=Math.hypot(e.b.p.x-e.a.p.x,e.b.p.y-e.a.p.y);
+    const zmid=(e.a.p.z+e.b.p.z)/2000,w=w0*ce(zmid,L2.terrain)*L.b/1e6*(Lh/e.L);
     addLoad(e,[-cf*w*f.n[0],0,-cf*w*f.n[2]])})}))})}
  if(L2.live){const q=L2.liveQ*1000*1.2*kT*mult;
   sfs.forEach(f=>f.lines.forEach(L=>L.r.forEach(id=>{eL(id).forEach(e=>{
@@ -179,15 +195,16 @@ function solveFrame(){
   nodes.forEach(n=>{if(!isSup(n)&&n.p.z>ridgeZ-1&&!seen.has(n.id)){seen.add(n.id);
    const fi=fmap.get(idx.get(n.id)*6+2);if(fi!==undefined)nodalF.push([fi,-1000*1.2*mult*kT])}})}
  const K=new Float64Array(nf*nf),F=new Float64Array(nf);
+ calc._dbgQ=els.map(e=>[e.r.name,e.L,+(e.qv[2].toFixed(6))]);
  els.forEach(e=>{const q=e.qv,R=e.R,L=e.L;
   const q1=q[0]*R[0].x+q[1]*R[1].x+q[2]*R[2].x,q2=q[0]*R[0].y+q[1]*R[1].y+q[2]*R[2].y,q3=q[0]*R[0].z+q[1]*R[1].z+q[2]*R[2].z;
   e.qloc=[q1,q2,q3];
-  e.f0=[-q1*L/2,-q2*L/2,-q3*L/2,0,-q3*L*L/12,q2*L*L/12,q1*L/2,q2*L/2,q3*L/2,0,q3*L*L/12,-q2*L*L/12];
+  e.f0=[-q1*L/2,-q2*L/2,-q3*L/2,0,q3*L*L/12,-q2*L*L/12,-q1*L/2,-q2*L/2,-q3*L/2,0,-q3*L*L/12,q2*L*L/12];
   const dofs=[];for(let i=0;i<12;i++)dofs.push(fmap.get((i<6?e.ia:e.ib)*6+(i%6)));
   for(let i=0;i<12;i++){const gi=dofs[i];if(gi===undefined)continue;
    for(let j=0;j<12;j++){const gj=dofs[j];if(gj===undefined)continue;K[gi*nf+gj]+=e.KE[i*12+j]}}
   for(let i=0;i<12;i++){const fi=dofs[i];if(fi===undefined)continue;
-   let Fe=0;for(let j=0;j<12;j++)Fe+=e.T[j*12+i]*e.f0[j];F[fi]+=-Fe}});
+   let Fe=0;for(let j=0;j<12;j++)Fe+=e.T[j*12+i]*e.f0[j];F[fi]+=Fe}});
  nodalF.forEach(([fi,v])=>F[fi]+=v);
  const A=K;
  for(let c=0;c<nf;c++){
@@ -200,8 +217,10 @@ function solveFrame(){
    for(let j=c;j<nf;j++)A[r*nf+j]-=f*A[c*nf+j];F[r]-=f*F[c]}}
  const uf=new Float64Array(nf);
  for(let c=nf-1;c>=0;c--){let s=F[c];for(let j=c+1;j<nf;j++)s-=A[c*nf+j]*uf[j];uf[c]=s/A[c*nf+c]}
+ calc._resid=(()=>{let m=0;const n2=Math.min(nf,3);for(let i=0;i<n2;i++){let s=-F[i];for(let j=0;j<nf;j++)s+=A[i*nf+j]*uf[j];m=Math.max(m,Math.abs(s))}return m.toExponential(2)})();
  const u=new Float64Array(nodes.length*6);
  nodes.forEach((n,i)=>{if(isSup(n))return;for(let d=0;d<6;d++)u[i*6+d]=uf[fmap.get(i*6+d)]});
+ calc._dbgU=Array.from(u.slice(0,12)).map(v=>+v.toExponential(2));
  const res=[];const react=new Map();
  let maxUR=0,urRod='-',maxD=0,dRod='-',mass=0,cost=0;
  els.forEach(e=>{
@@ -216,21 +235,21 @@ function solveFrame(){
   for(let i=0;i<=8;i++){const s=L*i/8,r2=L-s;
    const N=fe[6]+q1*r2;
    const M2=fe[11]+fe[7]*r2+q2*r2*r2/2;
-   const M3=-(fe[10]+fe[8]*r2+q3*r2*r2/2);
+   const M3=-fe[10]+fe[8]*r2+q3*r2*r2/2;
    const M=Math.hypot(M2,M3);
    const nnc=Math.max(0,-N)/(phi*p.A*e.Ry),mst=(Math.abs(M2)/p.Wy+Math.abs(M3)/p.Wx)/e.Ry;
    Ns.push(N);Ms.push(M);URs.push(N>=0?N/(p.A*e.Ry)+mst:nnc+mst*Math.max(0,1-.8*nnc))}
   const Ncomp=Math.max(0,-Math.min(...Ns)),Nt=Math.max(0,Math.max(...Ns)),Mmax=Math.max(...Ms),ur=Math.max(...URs);
-  const M2a=fe[11]+fe[7]*L+q2*L*L/2,M3a=-(fe[10]+fe[8]*L+q3*L*L/2);
-  const d2=(M2a+fe[11])*L*L/(16*e.E*p.Iy)+5*q2*L**4/(384*e.E*p.Iy);
-  const d3=(M3a-fe[10])*L*L/(16*e.E*p.Ix)+5*q3*L**4/(384*e.E*p.Ix);
+  const M2a=fe[11]+fe[7]*L+q2*L*L/2,M3a=-fe[10]+fe[8]*L+q3*L*L/2;
+  const d2=5*q2*L**4/(384*e.E*p.Iy)-(M2a+fe[11])*L*L/(16*e.E*p.Iy);
+  const d3=5*q3*L**4/(384*e.E*p.Ix)-(M3a-fe[10])*L*L/(16*e.E*p.Ix);
   const e1v=e.R[0];
   const um=[0,1,2].map(d=>(u[e.ia*6+d]+u[e.ib*6+d])/2);
   const along=um[0]*e1v.x+um[1]*e1v.y+um[2]*e1v.z;
   const nodalD=Math.hypot(um[0]-along*e1v.x,um[1]-along*e1v.y,um[2]-along*e1v.z);
   const defl=Math.hypot(d2,d3)+nodalD;
   res.push({id:e.r.id,name:e.r.name,secName:e.secName,matName:e.matName,secId:e.sec.id,L,
-   Ncomp,Nt,Mmax,ur,defl,Ns,Ms,URs,t0:e.r.t0==null?0:e.r.t0,t1:e.r.t1==null?1:e.r.t1});
+   Ncomp,Nt,Mmax,ur,defl,d2:+d2.toFixed(3),d3:+d3.toFixed(3),nodalD:+nodalD.toFixed(3),Ns,Ms,URs,t0:e.r.t0==null?0:e.r.t0,t1:e.r.t1==null?1:e.r.t1});
   if(ur>maxUR){maxUR=ur;urRod=e.r.name}
   if(defl>maxD){maxD=defl;dRod=e.r.name}
   mass+=e.p.mass*L/1000;cost+=(e.sec.price_rub_m||0)*L/1000;
@@ -242,11 +261,15 @@ function solveFrame(){
  res.forEach(rr=>{const k=String(rr.id).split('#')[0];
   const sm=rr.Ns.map((N,i)=>[rr.t0+(rr.t1-rr.t0)*i/8,N,rr.Ms[i],rr.URs[i]]);
   let a=agg.get(k);
-  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||{}).name||rr.name},sm};agg.set(k,a)}
+  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||M.rods.get(Number(k))||{}).name||rr.name},sm};agg.set(k,a)}
   else{a.sm.push(...sm);const p0=a.row;
    if(rr.defl>p0.defl)p0.defl=rr.defl;
    if(rr.Ncomp>p0.Ncomp)p0.Ncomp=rr.Ncomp;
-   if(rr.Nt>p0.Nt)p0.Nt=rr.Nt}});
+   if(rr.Nt>p0.Nt)p0.Nt=rr.Nt;
+   if(rr.Mmax>p0.Mmax)p0.Mmax=rr.Mmax;
+   if(rr.ur>p0.ur)p0.ur=rr.ur;
+   p0.L=(p0.L||0)+rr.L;
+   p0.t1=Math.max(p0.t1||0,rr.t1||0)}});
  res.length=0;
  agg.forEach((a,k)=>{const r0=a.row;
   a.sm.sort((x,y)=>x[0]-y[0]);
@@ -269,9 +292,12 @@ function solveFrame(){
 function calcGroup(){if(!window._gCalc){window._gCalc=new THREE.Group();scene.add(window._gCalc)}return window._gCalc}
 function nodeMatHeat(col){return matFor('nhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
 function rodMatHeat(col){return matFor('rhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
-function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=calc._rodCol=null;if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
+function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=calc._rodCol=null;if(typeof rodObjs!=='undefined')rodObjs.forEach((o,id)=>{o.g.visible=!M.hidden.has('r'+id)});if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
 function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
  const g=calcGroup(),show=calc.show;
+ /* деформированная схема выключает обычный каркас (стержни модели) в 3D */
+ if(typeof rodObjs!=='undefined'){const hide=calc.showDefl&&mode!=='plan';
+  rodObjs.forEach((o,id)=>{o.g.visible=(!hide&&!M.hidden.has('r'+id))})}
  const valOf=(rr,i)=>show==='n'?rr.Ns[i]:show==='m'?rr.Ms[i]/1e6:show==='defl'?rr.defl:rr.URs[i];
  let scale=1;
  if(show==='n'){R.res.forEach(r=>scale=Math.max(scale,r.Ncomp,r.Nt))}
@@ -279,11 +305,17 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
  else if(show==='defl'){R.res.forEach(r=>scale=Math.max(scale,r.defl))}
  else scale=Math.max(1.01,R.maxUR);
  const nidx=new Map(R.nodeOrder.map((id,i)=>[id,i]));
+ /* палитра от текущих min/max (signed): минимум -> синий, максимум -> красный */
+ let mmn=Infinity,mx=-Infinity;
+ if(calc.palMM){R.res.forEach(r=>{for(let i=0;i<=8;i++){const v=valOf(r,i);if(v<mmn)mmn=v;if(v>mx)mx=v}});
+  if(show==='defl')R.nodeOrder.forEach((id,j)=>{const d=Math.hypot(R.u[j*6],R.u[j*6+1],R.u[j*6+2]);if(d<mmn)mmn=d;if(d>mx)mx=d})}
+ const tOf=v=>(mx>mmn)?(v-mmn)/(mx-mmn):.5;
  const buckets=new Map();
- M.rods.forEach(rd=>{const rr=calc.byId.get(rd.id);if(!rr)return;
+ if(!calc.showDefl)M.rods.forEach(rd=>{const rr=calc.byId.get(String(rd.id));if(!rr)return;
   const na=M.nodes.get(rd.a),nb=M.nodes.get(rd.b);
   for(let i=0;i<8;i++){const v=(valOf(rr,i)+valOf(rr,i+1))/2;let col;
-   if(show==='n'){const t=clamp(Math.abs(v)/scale,.12,1);
+   if(calc.palMM)col=heatColor(clamp(tOf(v),0,1));
+   else if(show==='n'){const t=clamp(Math.abs(v)/scale,.12,1);
     col=v<0?heatColor(.62+.38*t):new THREE.Color(.15+.5*t,.45+.3*t,1*(.3+.7*t))}
    else col=heatColor(clamp(Math.abs(v)/scale,.08,1));
    const arr=buckets.get(col.getHexString())||[];
@@ -292,43 +324,66 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
  buckets.forEach((pts,hex)=>g.add(lines(pts,'#'+hex,1,true,false,true)));
  // rod body heat colors (cylinders): worst segment per rod
  calc._rodCol=new Map();
- M.rods.forEach(rd=>{const rr=calc.byId.get(rd.id);if(!rr)return;let col;
-  if(show==='n'){let bv=0;for(let i=0;i<8;i++){const v=(rr.Ns[i]+rr.Ns[i+1])/2;if(Math.abs(v)>Math.abs(bv))bv=v}
-   const t=clamp(Math.abs(bv)/scale,.12,1);col=bv<0?heatColor(.62+.38*t):new THREE.Color(.15+.5*t,.45+.3*t,.3+.7*t)}
-  else if(show==='m')col=heatColor(clamp(Math.abs(rr.Mmax/1e6)/scale,.08,1));
-  else if(show==='defl')col=heatColor(clamp(rr.defl/scale,.08,1));
-  else col=heatColor(clamp(rr.ur/scale,.08,1));
+ M.rods.forEach(rd=>{const rr=calc.byId.get(String(rd.id));if(!rr)return;let col,v;
+  if(show==='n'){let bv=0;for(let i=0;i<8;i++){const v2=(rr.Ns[i]+rr.Ns[i+1])/2;if(Math.abs(v2)>Math.abs(bv))bv=v2}v=bv}
+  else if(show==='m')v=rr.Mmax/1e6;
+  else if(show==='defl')v=rr.defl;
+  else v=rr.ur;
+  if(calc.palMM)col=heatColor(clamp(tOf(v),0,1));
+  else if(show==='n'){const t=clamp(Math.abs(v)/scale,.12,1);col=v<0?heatColor(.62+.38*t):new THREE.Color(.15+.5*t,.45+.3*t,.3+.7*t)}
+  else col=heatColor(clamp(Math.abs(v)/scale,.08,1));
   calc._rodCol.set(rd.id,col)});
  // node heat colors: max end value of attached rods (disp for defl)
  calc._nodeCol=new Map();
  M.nodes.forEach(nd=>{let col;
   if(show==='defl'){const i=nidx.get(nd.id);const d=Math.hypot(R.u[i*6],R.u[i*6+1],R.u[i*6+2]);
-   col=heatColor(clamp(d/scale,.08,1))}
+   col=calc.palMM?heatColor(clamp(tOf(d),0,1)):heatColor(clamp(d/scale,.08,1))}
   else{let bv=0;
-   for(const r of attachedRods(nd.id)){const rr=calc.byId.get(r.id);if(!rr)continue;
+   for(const r of attachedRods(nd.id)){const rr=calc.byId.get(String(r.id));if(!rr)continue;
     const v=valOf(rr,r.a===nd.id?0:8);if(Math.abs(v)>Math.abs(bv))bv=v}
-   if(show==='n'){const t=clamp(Math.abs(bv)/scale,.12,1);
+   if(calc.palMM)col=heatColor(clamp(tOf(bv),0,1));
+   else if(show==='n'){const t=clamp(Math.abs(bv)/scale,.12,1);
     col=bv<0?heatColor(.62+.38*t):new THREE.Color(.15+.5*t,.45+.3*t,1*(.3+.7*t))}
    else col=heatColor(clamp(Math.abs(bv)/scale,.08,1))}
   calc._nodeCol.set(nd.id,col)});
  applySelMats();
- if(calc.showDefl){const s=calc.deflScale,pts=[];
-  M.rods.forEach(rd=>{const d=id=>{const n=M.nodes.get(id),i=nidx.get(id);
-    return n.p.clone().add(V3(R.u[i*6]*s,R.u[i*6+1]*s,R.u[i*6+2]*s))};
-   pts.push(d(rd.a),d(rd.b))});
-  g.add(lines(pts,0xffc53d,.9,true,true,true))}
+ /* деформация в плане (вид сверху): прогибы откладываются перпендикулярно осям — эпюра */
+ const gPlan=window._gPlanDefl||(window._gPlanDefl=new THREE.Group(),scene.add(window._gPlanDefl),window._gPlanDefl);
+ clearGroup(gPlan);
+ if(mode==='plan'&&calc.showDefl){
+  const s2=calc.deflScale;
+  M.rods.forEach(rd=>{const rr=calc.byId.get(String(rd.id));if(!rr||!rr.defl)return;
+   const na=M.nodes.get(rd.a),nb=M.nodes.get(rd.b);if(!na||!nb)return;
+   const e1=nb.p.clone().sub(na.p);const L=e1.length();if(L<50)return;e1.multiplyScalar(1/L);
+   let perp=AZ.clone().cross(e1);if(perp.lengthSq()<1e-9)perp=AX.clone().cross(e1);
+   if(perp.lengthSq()<1e-9)return;perp.normalize();
+   const col=(calc._rodCol&&calc._rodCol.get(rd.id))||new THREE.Color(0xffc53d);
+   const mat=new THREE.LineBasicMaterial({color:col,linewidth:2});
+   const pts=[];const N=20;
+   for(let i=0;i<=N;i++){const t=i/N;
+    pts.push(na.p.clone().addScaledVector(e1,L*t).addScaledVector(perp,rr.defl*s2*Math.sin(Math.PI*t)))}
+   gPlan.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat))});
+  gPlan.visible=true;
+ }else gPlan.visible=false;
+ if(calc.showDefl&&mode!=='plan'&&typeof deflBodies==='function'){
+  if(calc.deflAuto){let md=0;R.res.forEach(r=>{if(r.defl>md)md=r.defl});
+   const box=modelBox();const dim=box?box.getSize(V3()).length():12000;
+   calc.deflScale=md>1e-6?Math.round(clamp(dim*0.06/md,1,300)):1;
+   const rg=$('#rngDefl'),dv=$('#dScaleVal');if(rg){rg.value=calc.deflScale}if(dv)dv.textContent=calc.deflScale}
+  deflBodies(g)}
  const lg=$('#calcLegend');if(!lg)return;lg.style.display='flex';
  const fmtV=v=>show==='n'?(v/1000).toFixed(1)+' кН':show==='m'?v.toFixed(0)+' кН·м':show==='defl'?v.toFixed(1)+' мм':v.toFixed(2);
- const lbl={ur:'UR — использование 0…1',n:'N: сжатие (тёплый) / растяжение (синий)',m:'M изгибающий, кН·м',defl:'Прогиб, мм'}[show];
- lg.innerHTML=`<div class="lgBar ${show==='n'?'lgN':''}"></div><b>${lbl}</b><span class="mono">0 → ${fmtV(scale)}</span>`;
+ const lbl={ur:'UR — использование',n:'N: сжатие (тёплый) / растяжение (синий)',m:'M изгибающий, кН·м',defl:'Прогиб, мм'}[show];
+ const rng=calc.palMM&&isFinite(mmn)&&isFinite(mx)?`${fmtV(mmn)} → ${fmtV(mx)}`:`0 → ${fmtV(scale)}`;
+ lg.innerHTML=`<div class="lgBar ${show==='n'&&!calc.palMM?'lgN':''}"></div><b>${lbl}${calc.palMM?' (палитра от мин..макс)':''}</b><span class="mono">${rng}</span>`;
  if(show==='defl')lg.insertAdjacentHTML('beforeend',`<span class="dim2">деформации ×${calc.deflScale}</span>`)}
 function calcRead(rodId){const rd=$('#calcRead');if(!rd)return;
- const rr=calc.byId.get(rodId);if(!rr){rd.textContent='';return}
+ const rr=calc.byId.get(String(rodId));if(!rr){rd.textContent='';return}
  rd.textContent=`${rr.name} • ${rr.secName} • сж ${(rr.Ncomp/1000).toFixed(1)} / раср ${(rr.Nt/1000).toFixed(1)} кН • M ${(rr.Mmax/1e6).toFixed(1)} кН·м • UR ${rr.ur.toFixed(2)} • f ${rr.defl.toFixed(1)} мм`}
 /* ---------- run + results panel ---------- */
 function runCalc(){const t0=performance.now();const R=solveFrame();
  if(!R||R.err){toast((R&&R.err)||'Расчёт не выполнен',{type:'err',timeout:5000});return}
- calc.res=R;calc.byId=new Map(R.res.map(r=>[r.id,r]));
+ calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));
  drawCalc();renderCalcResults();
  toast(`РАСЧЁТ: ${R.res.length} стержней, ${Math.round(performance.now()-t0)} мс • UR max ${R.maxUR.toFixed(2)} (${R.urRod})`,
   {type:R.maxUR>1?'warn':'ok',timeout:6000})}
@@ -340,7 +395,50 @@ function renderCalcResults(){const R=calc.res,el=$('#calcOut');if(!el||!R)return
  <div class="kv"><span>Сталь</span><b>${R.mass.toFixed(0)} кг</b></div>
  <table class="calcTab"><tr><th>стержень</th><th>сечение</th><th>UR</th><th>f, мм</th></tr>
  ${top.map(r=>`<tr class="${r.ur>1?'bad':''}" data-cr="${r.id}"><td>${esc(r.name)}</td><td>${esc(r.secName)}</td><td><b>${r.ur.toFixed(2)}</b></td><td>${r.defl.toFixed(1)}</td></tr>`).join('')}</table>`;
- el.querySelectorAll('[data-cr]').forEach(tr=>tr.onclick=()=>{selectOnly('rod',tr.dataset.cr);selectionChanged()})}
+ el.querySelectorAll('[data-cr]').forEach(tr=>tr.onclick=()=>{const v=/^\d+$/.test(tr.dataset.cr)?+tr.dataset.cr:tr.dataset.cr;selectOnly('rod',v);selectionChanged()})}
+/* ---------- авто-подбор сечений труб по типам стержней (жадный, с полными пересчётами) ---------- */
+function autoSections(){
+ if(!M.rods.size){toast('Нет стержней',{type:'warn'});return}
+ const byId=new Map(NR_SECTIONS.map(s=>[s.id,s]));
+ const cands=NR_SECTIONS.filter(s=>s.kind==='shs'||s.kind==='rhs')
+  .sort((a,b)=>calc.optCrit==='cost'?(a.price_rub_m-b.price_rub_m)||(a.mass_kg_m-b.mass_kg_m):a.mass_kg_m-b.mass_kg_m);
+ if(cands.length<2){toast('Мало сечений в каталоге',{type:'warn'});return}
+ const orig=new Map([...M.rods].map(([k,r])=>[k,r.sec]));
+ const restore=()=>orig.forEach((s,k)=>{const r=M.rods.get(k);if(r)r.sec=s});
+ pushUndo();
+ /* старт от самого лёгкого трубного профиля для всех типов; подъём до прохождения проверок */
+ const cur={},idx={};
+ [...new Set([...M.rods.values()].map(r=>r.type))].forEach(t=>{cur[t]=cands[0].id;idx[t]=0});
+ const steel=()=>{let m=0,c=0;M.rods.forEach(r=>{const s=byId.get(r.sec);if(s){m+=s.mass_kg_m*rodLen(r)/1000;c+=(s.price_rub_m||0)*rodLen(r)/1000}});return{m,c}};
+ const t0=steel();
+ const apply=()=>M.rods.forEach(r=>r.sec=cur[r.type]);
+ let R=null,pass=false,it=0;const stuck=new Set();
+ for(;it<45;it++){
+  apply();R=solveFrame();
+  if(R.err){restore();toast('Подбор прерван: '+R.err,{type:'warn'});return}
+  const bad=new Set();
+  R.res.forEach(rr=>{const rd=M.rods.get(+rr.id)||M.rods.get(rr.id);if(!rd)return;
+   if(rr.ur>1)bad.add(rd.type);
+   if(calc.optDefl&&rr.L>0&&rr.defl>rr.L/200)bad.add(rd.type)});
+  if(!bad.size){pass=true;break}
+  let adv=false;
+  bad.forEach(t=>{if(idx[t]<cands.length-1){idx[t]++;cur[t]=cands[idx[t]].id;adv=true;stuck.delete(t)}else stuck.add(t)});
+  if(!adv)break}
+ apply();R=solveFrame();
+ if(R.err){restore();toast('Подбор прерван: '+R.err,{type:'warn'});return}
+ const t1=steel();
+ calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));
+ afterChange();
+ drawCalc();renderCalcResults();
+ const types=Object.keys(cur).map(t=>`${(TYPES[t]||{}).prefix||t}: ${byId.get(cur[t]).name}`).join(' • ');
+ const el=$('#calcOut');
+ if(el)el.insertAdjacentHTML('afterbegin',`<div class="kv"><span>Подбор</span><b style="color:${pass?'#7fe8b8':'#ff7a6a'}">${pass?'оптимально найдено':'профиля, удовлетворяющего критериям, не найдено'}</b></div>
+  <div class="kv"><span>Сталь</span><b>${t0.m.toFixed(0)} → ${t1.m.toFixed(0)} кг (${t0.m?((t1.m/t0.m-1)*100).toFixed(1):'0'} %)</b></div>
+  <div class="kv"><span>Металл по цене</span><b>${Math.round(t0.c).toLocaleString('ru')} → ${Math.round(t1.c).toLocaleString('ru')} ₽</b></div>
+  <div class="kv"><span>UR max / итераций</span><b>${R.maxUR.toFixed(2)} / ${it}</b></div>
+  <div class="hint2">${esc(types)}${stuck.size?` • не подобрались: ${[...stuck].map(t=>(TYPES[t]||{}).prefix||t).join(', ')}`:''} • Ctrl+Z — отменить</div>`);
+ toast(`Подбор сечений: ${pass?'пройден':'не завершён'} • сталь ${t0.m.toFixed(0)}→${t1.m.toFixed(0)} кг • UR max ${R.maxUR.toFixed(2)}`,
+  {type:pass?'ok':'warn',timeout:8000})}
 /* ---------- panel ---------- */
 function calcPaneHTML(){const l=calc.loads;
  const opt=(v,cur,lbl)=>`<option value="${v}" ${String(v)===String(cur)?'selected':''}>${lbl}</option>`;
@@ -356,13 +454,20 @@ function calcPaneHTML(){const l=calc.loads;
  <div class="crow"><label>Множитель нагрузки <b id="multVal">${calc.factor.toFixed(2)}×</b></label>
   <input type="range" id="rngMult" min="0.25" max="3" step="0.05" value="${calc.factor}"></div>
  <div class="btnrow"><button class="btn gold" id="btnCalc">РАСЧЁТ</button><button class="btn" id="btnCalcClear">СБРОС</button></div>
+ <div class="psect">ПОДБОР СЕЧЕНИЙ (ТРУБЫ, ПО ТИПАМ)</div>
+ <div class="crow"><label>Критерий</label><select id="selOptCrit">${opt('mass',calc.optCrit,'минимум массы')}${opt('cost',calc.optCrit,'минимум стоимости')}</select></div>
+ <label class="ck"><input type="checkbox" id="ckOptDefl" ${calc.optDefl?'checked':''}> Ограничение прогиба f ≤ L/200</label>
+ <div class="btnrow"><button class="btn" id="btnOptSec">ПОДБОР СЕЧЕНИЙ</button></div>
+ <div class="hint2">Жадный перебор по типам: для каждого типа стержней подбирается самое лёгкое (дешёвое) трубное сечение из каталога с полным пересчётом каркаса на каждом шаге, пока UR ≤ 1 и прогибы проходят. Отмена — Ctrl+Z.</div>
  <div class="psect">ОТОБРАЖЕНИЕ</div>
  <div class="crow"><label>Тепловая карта</label><select id="selShow">
   <option value="ur" ${calc.show==='ur'?'selected':''}>UR — общая нагрузка</option>
   <option value="n" ${calc.show==='n'?'selected':''}>N — сжатие/растяжение</option>
   <option value="m" ${calc.show==='m'?'selected':''}>M — изгиб</option>
   <option value="defl" ${calc.show==='defl'?'selected':''}>Прогибы</option></select></div>
- <label class="ck"><input type="checkbox" id="ckDefl" ${calc.showDefl?'checked':''}> Деформированная схема</label>
+ <label class="ck"><input type="checkbox" id="ckPalMM" ${calc.palMM?'checked':''}> Палитра тепловых карт — от текущих мин/макс</label>
+ <label class="ck"><input type="checkbox" id="ckDefl" ${calc.showDefl?'checked':''}> Деформированная схема (тела профилей, 3D)</label>
+ <label class="ck"><input type="checkbox" id="ckDeflAuto" ${calc.deflAuto?'checked':''}> Масштаб — авто (увеличить до наглядности)</label>
  <div class="crow"><label>Масштаб прогибов ×<b id="dScaleVal">${calc.deflScale}</b></label>
   <input type="range" id="rngDefl" min="1" max="300" step="1" value="${calc.deflScale}"></div>
  <div class="psect">РЕЗУЛЬТАТ</div><div id="calcOut"><div class="hint2">РАСЧЁТ считает всю раму КЭ-моделью по свойствам профилей и материалов.</div></div>`}
@@ -378,16 +483,27 @@ function bindCalcPane(){const W=(id,ev,fn)=>{const e=$(id);if(e)e.addEventListen
  W('#btnCalc','click',()=>runCalc());
  W('#btnCalcClear','click',()=>{calc.res=null;clearCalcDraw();$('#calcOut').innerHTML='<div class="hint2">Расчёт сброшен.</div>';toast('Результаты сброшены')});
  W('#selShow','change',e=>{calc.show=e.target.value;if(calc.res)drawCalc()});
+ W('#ckPalMM','change',e=>{calc.palMM=e.target.checked;if(calc.res)drawCalc()});
+ W('#btnOptSec','click',()=>autoSections());
+ W('#ckOptDefl','change',e=>{calc.optDefl=e.target.checked});
+ W('#selOptCrit','change',e=>{calc.optCrit=e.target.value});
  W('#ckDefl','change',e=>{calc.showDefl=e.target.checked;if(calc.res)drawCalc()});
- W('#rngDefl','input',e=>{calc.deflScale=+e.target.value;$('#dScaleVal').textContent=calc.deflScale;if(calc.res)drawCalc()})}
+ W('#ckDeflAuto','change',e=>{calc.deflAuto=e.target.checked;if(calc.res)drawCalc()});
+ W('#rngDefl','input',e=>{calc.deflAuto=false;const ca=$('#ckDeflAuto');if(ca)ca.checked=false;calc.deflScale=+e.target.value;$('#dScaleVal').textContent=calc.deflScale;if(calc.res)drawCalc()})}
 /* ---------- app modes ---------- */
 function setAppMode(m){appMode=m;
  document.body.classList.toggle('app-loads',m!=='model');
  ['tabModel','tabLoads','tabCut','tabReport'].forEach(id=>{const b=$('#'+id);if(b)b.classList.toggle('on',id==='tab'+m.charAt(0).toUpperCase()+m.slice(1))});
  $('#toolbar').style.display=m==='model'?'':'none';
- if(m==='model'){$('#paneCalc').classList.remove('on');$('#tabCalc').classList.remove('on');$('#tabProps').classList.add('on');$('#paneProps').classList.add('on');clearCalcDraw&&clearCalcDraw();renderTree&&renderTree()}
+ if(m==='model'){$('#paneCalc').classList.remove('on');$('#tabCalc').classList.remove('on');$('#tabProps').classList.add('on');$('#paneProps').classList.add('on');if(calc.res)drawCalc();else{clearCalcDraw&&clearCalcDraw()}renderTree&&renderTree()}
+ function openCalcPaneOnly(){appMode='loads';document.body.classList.toggle('app-loads',true);
+  ['tabModel','tabLoads','tabCut','tabReport'].forEach(id=>{const b=$('#'+id);if(b)b.classList.toggle('on',id==='tabLoads')});
+  $('#tabCalc').classList.add('on');
+  $('#paneProps').classList.remove('on');$('#paneTree').classList.remove('on');$('#tabProps').classList.remove('on');$('#tabTree').classList.remove('on');
+  $('#paneCalc').classList.add('on');if(!$('#paneCalc').innerHTML)$('#paneCalc').innerHTML=calcPaneHTML(),bindCalcPane();
+  if(calc.res)drawCalc();updateHint&&updateHint()}
  if(m==='loads'){
-  if(mode==='plan')exitPlan();
+  if(mode==='plan'){openCalcPaneOnly();return}
   $('#tabCalc').classList.add('on');
   $('#paneProps').classList.remove('on');$('#paneTree').classList.remove('on');$('#tabProps').classList.remove('on');$('#tabTree').classList.remove('on');
   $('#paneCalc').classList.add('on');if(!$('#paneCalc').innerHTML)$('#paneCalc').innerHTML=calcPaneHTML(),bindCalcPane();
@@ -395,6 +511,7 @@ function setAppMode(m){appMode=m;
  if(m==='cut'){setAppModeQuiet('model');openCutModal()}
  if(m==='report'){setAppModeQuiet('model');openReportModal()}}
 function setAppModeQuiet(m){appMode=m;document.body.classList.toggle('app-loads',m!=='model');
+ if(typeof rodObjs!=='undefined')rodObjs.forEach((o,id)=>{o.g.visible=!M.hidden.has('r'+id)});
  ['tabModel','tabLoads','tabCut','tabReport'].forEach(id=>{const b=$('#'+id);if(b)b.classList.toggle('on',id==='tab'+m.charAt(0).toUpperCase()+m.slice(1))});
  $('#toolbar').style.display=m==='model'?'':'none';
  if(m==='model'){$('#paneCalc').classList.remove('on');$('#tabProps').classList.add('on');$('#paneProps').classList.add('on')}}
@@ -473,27 +590,27 @@ openModal('РАСКРОЙ — резы и запилы по биссектрис
 /* ---------- report ---------- */
 function openReportModal(){
  if(!calc.res){toast('Сначала выполните РАСЧЁТ в режиме «Нагрузки»',{type:'warn'});setAppMode('loads');return}
+ const shots=(typeof captureShots==='function')?captureShots():[];
  const R=calc.res,l=calc.loads;
  const top=[...R.res].sort((a,b)=>b.ur-a.ur).slice(0,12);
- const kinds={};M.rods.forEach(r=>{const s=rodSec(r);kinds[s.name]=(kinds[s.name]||0)+1});
  openModal('ОТЧЁТ ПО КАРКАСУ',
  `<div class="hint2">«${esc($('#projName').value)}» • ${M.nodes.size} узлов / ${M.rods.size} стержней • стержневая КЭ модель (6 DOF/узел) • нагрузки СП 20.13330, проверки СП 16.13330 (упрощённая φ по λ)</div>
  <div class="kv"><span>Нагрузки</span><b>${l.dead?'собств. вес • ':''}${l.snow?'снег р.'+l.snowRegion+' γf='+GF_SNOW[l.snowRegion]+' • ':''}${l.wind?'ветер р.'+l.windRegion+' м.'+l.terrain+' • ':''}${l.live?'эксплуат. 0.4 кПа + 1 кН • ':''}множитель ×${calc.factor}</b></div>
  <div class="kv"><span>Итог</span><b style="color:${R.maxUR>1?'#ff7a6a':'#7fe8b8'}">UR max ${R.maxUR.toFixed(2)} (${esc(R.urRod)})${R.maxUR>1?' — ПЕРЕГРУЗ':''} • прогиб max ${R.maxD.toFixed(1)} мм (${esc(R.dRod)})</b></div>
  <div class="kv"><span>Сталь / металл</span><b>${R.mass.toFixed(0)} кг • ${Math.round(R.cost).toLocaleString('ru')} ₽</b></div>
+ ${shots.length?`<div class="psect">СХЕМЫ (превью)</div><div class="shotPrev">${shots.map(s=>`<figure><img src="${s.data}" alt="${esc(s.t)}"/><figcaption>${esc(s.t)}</figcaption></figure>`).join('')}</div>`:''}
  <div class="psect">НАИБОЛЕЕ ЗАГРУЖЕННЫЕ СТЕРЖНИ</div>
  <table class="calcTab"><tr><th>стержень</th><th>сечение</th><th>N сж, кН</th><th>M, кН·м</th><th>UR</th><th>f, мм</th></tr>
  ${top.map(r=>`<tr class="${r.ur>1?'bad':r.ur>.9?'warn2':''}"><td>${esc(r.name)}</td><td>${esc(r.secName)}</td><td>${(r.Ncomp/1000).toFixed(1)}</td><td>${(r.Mmax/1e6).toFixed(1)}</td><td><b>${r.ur.toFixed(2)}</b></td><td>${r.defl.toFixed(1)}</td></tr>`).join('')}</table>
  <div class="psect">ОПОРНЫЕ РЕАКЦИИ, кН</div>
  <table class="calcTab"><tr><th>опора</th><th>R</th><th>X</th><th>Y</th><th>Z</th></tr>
  ${R.reactArr.map(r=>`<tr><td>${esc(r.name)}</td><td><b>${r.F.toFixed(1)}</b></td><td>${r.fx.toFixed(1)}</td><td>${r.fy.toFixed(1)}</td><td>${r.fz.toFixed(1)}</td></tr>`).join('')}</table>
- <div class="psect">СОСТАВ СЕЧЕНИЙ</div>
- <div class="hint2">${Object.entries(kinds).map(([k,n])=>`${esc(k)} × ${n}`).join(' • ')}</div>
- <div class="hint2">UR: сжатие+изгиб — N/(φ·A·Ry) + (|M₂|/Wy+|M₃|/Wx)·(1−0.8n)/(Ry); растяжение+изгиб — N/(A·Ry) + |M₂|/Wy+|M₃|/Wx)/Ry (φ по λ=min(L/i)). Прогибы — от полной нагрузки без γf (эксплуатационная оценка).</div>`,
- [{label:'Скачать HTML',keep:true,fn:()=>{const body=document.querySelector('#mbody');
-   const blob=new Blob(['<meta charset="utf-8"><style>body{font:13px sans-serif;color:#111;background:#fff}table{border-collapse:collapse}td,th{border:1px solid #999;padding:4px 8px}.psect{font-weight:700;margin:12px 0 4px}</style>'+body.innerHTML],{type:'text/html'});
-   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='roof-report.html';a.click();toast('Отчёт сохранён',{type:'ok'})}},
-  {label:'Закрыть',fn:closeModal}])}
+ <div class="hint2">В HTML-отчёт войдут: 5 видовых схем (включая деформированную), схемы балок с прогибами и N, схемы раскроя по штабам мерного проката, смета, реакции, состав сечений, методика, <b>отказ от ответственности</b>. Автор: DENstis • <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a>.</div>`,
+ [{label:'Скачать HTML-отчёт',keep:true,fn:()=>{const html=(typeof buildReportHTML==='function')?buildReportHTML(shots):null;
+   if(!html){toast('Модуль отчёта не загружен (31-report.js)',{type:'err'});return}
+   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='roof-report.html';a.click();toast('Отчёт сохранён — со схемами, раскроем и сметой',{type:'ok',timeout:5000})}},
+  {label:'Закрыть',fn:closeModal}]);$('#modalCard').classList.add('wide')}
 /* boot wiring */
 window.addEventListener('load',()=>{
  ['#tabModel','#tabLoads','#tabCut','#tabReport'].forEach((id,i)=>{const b=$(id);if(b)b.onclick=()=>setAppMode(['model','loads','cut','report'][i])});

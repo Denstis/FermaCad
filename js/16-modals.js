@@ -2,7 +2,7 @@
 'use strict';
 /* ================= MODALS & TOASTS ================= */
 let modalOpen=false;
-function openModal(title,body,actions=[],onOpen){modalOpen=true;const w=$('#modalWrap'),c=$('#modalCard');
+function openModal(title,body,actions=[],onOpen){modalOpen=true;const w=$('#modalWrap'),c=$('#modalCard');c.classList.remove('wide');
  c.innerHTML=`<h2>${title}<button class="x" id="mx">${ICONS.close}</button></h2><div id="mbody">${body}</div><div class="mactions" id="mact"></div>`;
  w.classList.add('on');$('#mx').onclick=closeModal;
  actions.forEach(a=>{const b=document.createElement('button');b.className='btn'+(a.primary?' prim':'')+(a.warn?' warn':'');b.textContent=a.label;
@@ -39,8 +39,13 @@ function helpModal(){openModal('Справка • ФЕРМА·CAD',`
  <tr><td>Нав-куб</td><td>грани/рёбра/углы — стандартные виды</td></tr></table>
  <div class="hgrid"><div>Выбор <kbd>V</kbd></div><div>Узел <kbd>N</kbd></div><div>Опора <kbd>O</kbd></div><div>Стержни <kbd>1–9</kbd></div>
  <div>Плоскость <kbd>L</kbd></div><div>Измерение <kbd>M</kbd></div><div>Вписать <kbd>F</kbd></div><div>Скрыть <kbd>H</kbd></div>
+ <div>Узлы на пересечениях осей <kbd>X</kbd></div><div>Полная модель профилей <kbd>B</kbd></div>
  <div>Отмена <kbd>Ctrl+Z</kbd></div><div>Повтор <kbd>Ctrl+Y</kbd></div><div>Копия / вставка <kbd>Ctrl+C/V</kbd></div><div>Клон с шагом <kbd>Ctrl+D</kbd></div>
  <div>Группа <kbd>Ctrl+G</kbd></div><div>Сохранить <kbd>Ctrl+S</kbd></div><div>Удалить <kbd>Del</kbd></div><div>Закрыть чертёж <kbd>Enter</kbd></div></div>
  <p style="margin-bottom:6px"><b style="color:var(--acc2)">Типы стержней:</b></p><div class="legend">${ROD_KEYS.map(k=>`<div><span class="dot" style="background:${cssColor(TYPES[k].color)};color:${cssColor(TYPES[k].color)}"></span>${TYPES[k].label} <kbd>${TYPES[k].hk}</kbd></div>`).join('')}</div>
- <p style="margin-top:12px">Форматы: <b>JSON</b> (полный проект, импорт/экспорт), <b>OBJ</b> (геометрия осей для CAD/BIM). Автосохранение — в браузере.</p>`,
+ <p style="margin-top:12px"><b style="color:var(--acc)">Расчёт (вкладка РАСЧЁТ):</b>Loads (собственный вес, снег по СП 20.13330 с регионами, ветер по СП 20.13330 с типом местности, эксплуатационная) → «РАСЧЁТ» — плоский пространственный FEM (6 DOF/узел): стержни автоматически режутся по узлам, лежащим на их осях. Тепловые карты UR / N / M / прогиб — на стержнях и узлах. <b>«Деформированная схема»</b> — каркас телами профилей, смещёнными по расчёту (×масштаб), в тех же цветах; работает в 3D-режимах «Модель» и «Расчёт нагрузок» (в плане 2D — деформированная схема рисуется линиями). Расчётная модель не меняет основной чертёж.</p>
+ <p><b style="color:var(--acc2)">Полная модель (B / «ПРОФИЛИ»):</b> стержни — реальные профили (полые, с толщиной стенки), прямоугольные ориентированы широкой стороной вертикально; места сварных стыков — красные контуры сечений. Раскрой (запилы биссектрисой, T-стыки, штабы мерного проката) — во вкладке РАСКРОЙ.</p>
+ <p><b style="color:var(--acc2)">HTML-отчёт (вкладка ОТЧЁТ):</b> 5 видовых схем, схемы элементов с деформациями и усилиями, топ загруженных стержней, реакции опор, схемы раскроя по штабам, смета металла, методика. Скачивается одним файлом со встроенными картинками.</p>
+ <p style="margin-top:12px">Форматы: <b>JSON</b> (полный проект, импорт/экспорт), <b>OBJ</b> (геометрия осей для CAD/BIM). Автосохранение — в браузере.</p>
+ <p style="margin-top:12px;padding:8px;border:1px solid var(--l);border-radius:6px;font-size:11.5px"><b>Отказ от ответственности.</b> ФЕРМА·CAD — инструмент предварительной оценки. Расчёт выполнен по упрощённой стержневой КЭ-модели без узловой податливости, эксцентриситетов, местной устойчивости, усталости, температурных воздействий и проверок сварных швов; нагрузки и сочетания — по типовым коэффициентам без учёта всей нормативной базы (СП 16.13330, СП 70, ГОСТ, региональныеsnow/wind-нормы, снег/ветер в населённом пункте по фактическим картам). <b>Результаты не являются расчётной документацией</b> и не могут служить основанием для производства работ, изготовления и приёмки конструкций. Проект несущих конструкций должен быть выполнен и проверен квалифицированным расчётчиком/проектной организацией с верификацией независимым сертифицированным ПО. Автор не несёт ответственности за использование результатов. Автором является <b>DENstis</b>, <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a>.</p>`,
   [{label:'Закрыть',primary:true}])}

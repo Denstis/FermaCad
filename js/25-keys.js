@@ -38,6 +38,8 @@ document.addEventListener('keydown',e=>{
  if(TOOL_KEYS[c]){setTool(TOOL_KEYS[c]);return}
  if(c==='KeyF'){fitAll();return}
  if(c==='KeyP'){planeFromSelectionAction&&planeFromSelectionAction();return}
+ if(c==='KeyX'){xnodesAction&&xnodesAction();return}
+ if(c==='KeyB'){setFullModel&&setFullModel(!fullModelOn);return}
  if(c==='KeyH'){if(selCount())hideSelection();return}
  if(c==='Delete'||c==='Backspace'){e.preventDefault();deleteSelection();return}
  if(c==='Enter'&&mode==='plan'){exitPlan();return}});

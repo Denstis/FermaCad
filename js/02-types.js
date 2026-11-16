@@ -19,4 +19,5 @@ const TOOL_DEFS=[
  {sec:'УЗЛЫ'},{id:'node',ic:'node',label:'Узел',hk:'N'},{id:'support',ic:'support',label:'Опора',hk:'O',c:SUP_COLOR},
  {sec:'СТЕРЖНИ'},
  ...ROD_KEYS.map(k=>({id:k,ic:k,label:TYPES[k].label,hk:TYPES[k].hk,c:TYPES[k].color})),
- {sec:'АНАЛИЗ'},{id:'plane',ic:'plane',label:'Плоскость по 3 узлам',hk:'L',c:0x6fd3ff},{id:'measure',ic:'measure',label:'Измерение',hk:'M',c:0xffc53d}];
+ {sec:'АНАЛИЗ'},{id:'plane',ic:'plane',label:'Плоскость по 3 узлам',hk:'L',c:0x6fd3ff},{id:'measure',ic:'measure',label:'Измерение',hk:'M',c:0xffc53d},
+ {id:'xnodes',ic:'xnodes',label:'Узлы на пересечениях стержней',hk:'X',act:true}];

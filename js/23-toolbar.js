@@ -15,13 +15,15 @@ function initTips(){const tip=document.createElement('div');tip.id='tip';documen
  window.addEventListener('blur',hide)}
 function buildToolbar(){const tb=$('#toolbar');let html='';
  TOOL_DEFS.forEach(t=>{if(t.sec){html+=`<div class="tlabel">${t.sec}</div>`;return}
-  html+=`<button class="tool" data-tool="${t.id}" data-tip="${esc(t.label)} (${t.hk})" ${t.c?`style="--tc:${cssColor(t.c)}"`:''}>${t.c?'<span class="dot"></span>':''}<i>${ICONS[t.ic]}</i><span class="hk">${t.hk}</span></button>`;
-  if(t.id==='plane')html+='<button class="tool dis" id="tbPlaneSel" data-tip="Плоскость по выделению: ≥3 неколлинеарных компланарных узла (P)"><i>'+ICONS.planefit+'</i><span class="hk">P</span></button>'});
+  if(t.act){html+=`<button class="tool" id="tbXNodes" data-tip="${esc(t.label)} (${t.hk})"><i>${ICONS[t.ic]}</i><span class="hk">${t.hk}</span></button>`;return}
+ html+=`<button class="tool" data-tool="${t.id}" data-tip="${esc(t.label)} (${t.hk})" ${t.c?`style="--tc:${cssColor(t.c)}"`:''}>${t.c?'<span class="dot"></span>':''}<i>${ICONS[t.ic]}</i><span class="hk">${t.hk}</span></button>`;
+ if(t.id==='plane')html+='<button class="tool dis" id="tbPlaneSel" data-tip="Плоскость по выделению: ≥3 неколлинеарных компланарных узла (P)"><i>'+ICONS.planefit+'</i><span class="hk">P</span></button>'});
  html+='<div style="flex:1"></div><div class="tlabel">ВИД</div><button class="tool" id="tbFit" data-tip="Вписать всё (F)"><i>'+ICONS.fit+'</i><span class="hk">F</span></button>';
  tb.innerHTML=html;
  tb.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
  $('#tbFit').onclick=fitAll;
- $('#tbPlaneSel').onclick=planeFromSelectionAction;updateToolAvail()}
+ $('#tbPlaneSel').onclick=planeFromSelectionAction;
+ const xBtn=$('#tbXNodes');if(xBtn)xBtn.onclick=()=>xnodesAction();updateToolAvail()}
 function bindTopbar(){$('#btnUndo').onclick=undo;$('#btnRedo').onclick=redo;
  $('#btnDemo').onclick=loadDemo;$('#btnSave').onclick=saveQuick;$('#btnOpen').onclick=savesModal;
  $('#btnImport').onclick=()=>$('#fileInput').click();
