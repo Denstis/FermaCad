@@ -221,6 +221,164 @@ function svgBeam(g,R){
  s+=`<text x="4" y="14" font-size="10.5" fill="#111">${esc(g.r.name)} • ${esc(secNameOf(g.r))} • прогибы ×${calc.deflScale} (оранжевый)</text>`;
  return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" xmlns="http://www.w3.org/2000/svg">${s}</svg>`;
 }
+/* ==================== Шаг 5 (docs/FABRICATION.md §4.6) ====================
+   SVG-разделы отчёта: чертежи запилов (позиции одинаковых деталей),
+   схемы стыковки узлов (calc.joints), план поэтапной сборки (assemblyPlan). */
+/* короткая подпись типа реза для схем */
+const cutShort=E=>E.kind==='miter'?'запил '+Math.round(E.angle||0)+'°':
+ E.kind==='nest'?'вложение':E.kind==='T'?'подрез T':E.kind==='main'?'основной':
+ E.kind==='pass'?'встык':E.kind==='flat'?'торец 90°':E.kind==='free'?'свободный':'—';
+const sgnM=v=>(v>0?'+':'')+Math.round(v);
+/* отрезок прямой (nx,ny)+s(dx,dy) внутри прямоугольника или null */
+function clipSeg(nx,ny,dx,dy,rx0,ry0,rx1,ry1){
+ if(Math.abs(dx)<1e-9&&Math.abs(dy)<1e-9)return null;
+ const cand=[];
+ if(Math.abs(dy)>1e-9)cand.push((ry0-ny)/dy,(ry1-ny)/dy);
+ if(Math.abs(dx)>1e-9)cand.push((rx0-nx)/dx,(rx1-nx)/dx);
+ const ok=s=>{const X=nx+s*dx,Y=ny+s*dy;return X>=rx0-1e-6&&X<=rx1+1e-6&&Y>=ry0-1e-6&&Y<=ry1+1e-6};
+ const ss=cand.filter(ok).sort((a,b)=>a-b);
+ if(ss.length<2)return null;
+ return[[nx+ss[0]*dx,ny+ss[0]*dy],[nx+ss[ss.length-1]*dx,ny+ss[ss.length-1]*dy]];}
+/* компоненты нормали плоскости реза в осях чертежа: n·e3 (латераль) и n·v (ось) */
+function cutDir(E){if(!E.n||!E.e3)return null;
+ const n3=E.n[0]*E.e3[0]+E.n[1]*E.e3[1]+E.n[2]*E.e3[2];
+ const n2=E.n[0]*E.e2[0]+E.n[1]*E.e2[1]+E.n[2]*E.e2[2];
+ const nv=Math.sqrt(Math.max(0,1-n3*n3-n2*n2)); /* n·v > 0 (биссектриса) */
+ return[n3,nv]}
+/* --- чертёж ПОЗИЦИИ раскроя: заготовка в масштабе + два укрупнённых торца --- */
+function svgCutPos(sec,gp){
+ const h=sec.h_mm||60,b=sec.b_mm||60;
+ const W=940,x0=74,x1=W-64,sc=(x1-x0)/gp.Ls,yc=76;
+ const hb=Math.max(4,h*sc);
+ const pA=endLenAdd(gp.A),pB=endLenAdd(gp.B);
+ const nAx=x0+pA*sc,nBx=x1+pB*sc;
+ let s=`<text x="4" y="13" font-size="11" fill="#111"><tspan font-weight="bold" fill="#20506f">${gp.pos}</tspan> • ${gp.parts.length} шт • ${esc(gp.parts.join(', '))} • L загот ${gp.Ls} • ось ${gp.La} • ${esc(sec.name)}</text>`;
+ /* ось (пунктир, выходит за заготовку у T/вложения) */
+ s+=`<line x1="${nAx.toFixed(1)}" y1="${yc}" x2="${nBx.toFixed(1)}" y2="${yc}" stroke="#999" stroke-dasharray="7 4"/>`;
+ /* заготовка */
+ s+=`<rect x="${x0}" y="${(yc-hb/2).toFixed(1)}" width="${x1-x0}" height="${hb.toFixed(1)}" fill="#eef5fd" stroke="#20506f"/>`;
+ /* линии реза на заготовке */
+ const drawCut=(E,nx,sx2)=>{
+  if(E.kind==='miter'){const d=cutDir(E);if(!d)return;
+   const seg=clipSeg(nx,yc,d[0]*sx2*sc,d[1]*sc,x0,yc-hb/2,x1,yc+hb/2);
+   if(seg)s+=`<line x1="${seg[0][0].toFixed(1)}" y1="${seg[0][1].toFixed(1)}" x2="${seg[1][0].toFixed(1)}" y2="${seg[1][1].toFixed(1)}" stroke="#c62828" stroke-width="2"/>`}
+  else if(E.kind==='T'||E.kind==='nest'||E.kind==='flat'||E.kind==='free'){
+   s+=`<line x1="${nx.toFixed(1)}" y1="${(yc-hb/2).toFixed(1)}" x2="${nx.toFixed(1)}" y2="${(yc+hb/2).toFixed(1)}" stroke="#c62828" stroke-width="2"/>`}};
+ drawCut(gp.A,nAx,1);drawCut(gp.B,nBx,-1);
+ /* узлы */
+ [[nAx,'А',pA],[nBx,'Б',pB]].forEach(([nx,ttl,p])=>{
+  s+=`<circle cx="${nx.toFixed(1)}" cy="${yc}" r="3.2" fill="#111"/>`;
+  s+=`<text x="${nx.toFixed(1)}" y="${(yc+hb/2+15).toFixed(1)}" font-size="9" fill="#444" text-anchor="middle">узел ${ttl} (${sgnM(p)})</text>`});
+ /* размеры */
+ s+=`<line x1="${nAx.toFixed(1)}" y1="${(yc-hb/2-7).toFixed(1)}" x2="${nBx.toFixed(1)}" y2="${(yc-hb/2-7).toFixed(1)}" stroke="#666"/>`;
+ s+=`<text x="${((nAx+nBx)/2).toFixed(1)}" y="${(yc-hb/2-11).toFixed(1)}" font-size="9" fill="#333" text-anchor="middle">L ось ${gp.La}</text>`;
+ s+=`<line x1="${x0}" y1="${(yc+hb/2+30).toFixed(1)}" x2="${x1}" y2="${(yc+hb/2+30).toFixed(1)}" stroke="#666"/>`;
+ s+=`<line x1="${x0}" y1="${(yc+hb/2+26).toFixed(1)}" x2="${x0}" y2="${(yc+hb/2+34).toFixed(1)}" stroke="#666"/>`;
+ s+=`<line x1="${x1}" y1="${(yc+hb/2+26).toFixed(1)}" x2="${x1}" y2="${(yc+hb/2+34).toFixed(1)}" stroke="#666"/>`;
+ s+=`<text x="${W/2}" y="${(yc+hb/2+43).toFixed(1)}" font-size="9.5" fill="#333" text-anchor="middle">L загот ${gp.Ls} мм (запас на запилы учтён в L)</text>`;
+ /* два укрупнённых торца (равный масштаб обеих осей → углы истинные).
+    Панели НИЖЕ размера «L загот» (текст на yc+hb/2+43) — без наложений. */
+ const pY=Math.max(142,yc+hb/2+50);
+ const panel=(E,side,P,ttl)=>{
+  const pE=endLenAdd(E);
+  const k=Math.min(28/h,360/Math.max(Math.abs(pE),140));
+  const edge=side>0?P.x+46:P.x+P.w-46;
+  const far=side>0?P.x+P.w-12:P.x+12;
+  const X=v=>edge+side*v*k;
+  const H=Math.max(6,h*k),yc2=pY+68,yT=yc2-H/2,yB=yT+H; /* грань = низ rect */
+  const rx0=Math.min(edge,far),rx1=Math.max(edge,far);
+  const nodeX=X(pE);
+  let t=`<rect x="${P.x}" y="${pY}" width="${P.w}" height="150" fill="#fafafa" stroke="#ddd"/>`;
+  t+=`<text x="${P.x+6}" y="${pY+14}" font-size="10" font-weight="bold" fill="#20506f">${ttl}</text>`;
+  t+=`<text x="${P.x+6}" y="${pY+27}" font-size="8.5" fill="#555">${esc(E.txt.slice(0,74))}</text>`;
+  /* тело заготовки */
+  t+=`<rect x="${rx0.toFixed(1)}" y="${yT.toFixed(1)}" width="${(rx1-rx0).toFixed(1)}" height="${H.toFixed(1)}" fill="#eef5fd" stroke="#20506f"/>`;
+  /* линия реза */
+  if(E.kind==='miter'){const d=cutDir(E);
+   if(d){const seg=clipSeg(nodeX,yc2,d[0]*side*k,d[1]*k,rx0,yT,rx1,yB);
+    if(seg)t+=`<line x1="${seg[0][0].toFixed(1)}" y1="${seg[0][1].toFixed(1)}" x2="${seg[1][0].toFixed(1)}" y2="${seg[1][1].toFixed(1)}" stroke="#c62828" stroke-width="2.4"/>`}}
+  else t+=`<line x1="${edge.toFixed(1)}" y1="${yT.toFixed(1)}" x2="${edge.toFixed(1)}" y2="${yB.toFixed(1)}" stroke="#c62828" stroke-width="2.4"/>`;
+  /* узел + подписи */
+  t+=`<line x1="${nodeX.toFixed(1)}" y1="${(yT-7).toFixed(1)}" x2="${nodeX.toFixed(1)}" y2="${(yB+7).toFixed(1)}" stroke="#111" stroke-dasharray="4 3"/>`;
+  t+=`<circle cx="${nodeX.toFixed(1)}" cy="${yc2}" r="3.4" fill="#111"/>`;
+  t+=`<text x="${Math.min(Math.max(nodeX,P.x+40),P.x+P.w-40).toFixed(1)}" y="${(yB+20).toFixed(1)}" font-size="9" fill="#333" text-anchor="middle">вынос ${sgnM(pE)} мм</text>`;
+  let y2=yB+32;
+  if(E.angle!=null&&E.kind==='miter')t+=`<text x="${P.x+P.w/2}" y="${y2}" font-size="9" fill="#c62828" text-anchor="middle">запил ${Math.round(E.angle)}° от торца (биссектриса)</text>`,y2+=12;
+  if(E.main)t+=`<text x="${P.x+P.w/2}" y="${y2}" font-size="9" fill="#555" text-anchor="middle">основной: «${esc(E.main.name)}»</text>`;
+  t+=`<text x="${far.toFixed(1)}" y="${(yT-4).toFixed(1)}" font-size="8.5" fill="#20506f" text-anchor="${side>0?'end':'start'}">${b}×${h}</text>`;
+  return t};
+ s+=panel(gp.A,1,{x:6,w:458},'Конец А')+panel(gp.B,-1,{x:476,w:458},'Конец Б');
+ return `<svg viewBox="0 0 ${W} ${pY+156}" width="100%" xmlns="http://www.w3.org/2000/svg">${s}</svg>`;
+}
+/* --- группировка одинаковых схем узлов (класс + типы/секции/резы ветвей) --- */
+function jointGroups(J){
+ const map=new Map();
+ J.forEach(j=>{
+  const mType=id=>{const r=M.rods.get(id);return r?r.type:''};
+  const key=j.cls+'|'+(j.main?mType(j.main.id):'')+'|'+j.members.map(m=>{const sc2=rodSec(m.r)||{};
+   return `${m.r.type}:${sc2.name}:${m.E.kind}:${Math.round(m.E.al||m.E.angle||0)}`}).sort().join(';');
+  const g=map.get(key)||{j,nodes:[]};g.nodes.push(j.name);map.set(key,g)});
+ return[...map.values()]}
+/* --- схема стыковки узла: две проекции (фасад XZ + план XY) --- */
+function svgJoint(j){
+ const W=620,Hh=312,cy=176,R=94;
+ const prj=[{t:'Фасад (XZ)',a:0,b:2,cx:170},{t:'План (XY)',a:0,b:1,cx:470}];
+ const jp=[j.p.x,j.p.y,j.p.z];
+ const mem=[];
+ j.members.forEach(m=>{let o=null;
+  if(m.thru){const ra=M.nodes.get(m.r.a),rb=M.nodes.get(m.r.b);if(!ra||!rb)return;
+   o=ra.p.distanceTo(j.p)>rb.p.distanceTo(j.p)?ra.p:rb.p}
+  else{const on=M.nodes.get(m.r.a===j.nid?m.r.b:m.r.a);if(!on)return;o=on.p}
+  if(o)mem.push({m,o:[o.x,o.y,o.z]})});
+ let maxL=0;
+ mem.forEach(x=>prj.forEach(p=>{const dx=x.o[p.a]-jp[p.a],dy=x.o[p.b]-jp[p.b];
+  maxL=Math.max(maxL,Math.hypot(dx,dy))}));
+ const sc=maxL>1?R/maxL:1;
+ let s=`<text x="4" y="13" font-size="11" fill="#111"><tspan font-weight="bold" fill="#20506f">${esc(j.name)}</tspan> — ${esc(j.clsTxt)}${j.main?` • основной: ${esc(j.main.name)}`:''} • ${j.nBranch?('ветвей: '+j.nBranch):('элементов: '+j.members.length)}</text>`;
+ prj.forEach((p,pi)=>{
+  s+=`<text x="${p.cx-40}" y="32" font-size="9.5" fill="#666">${p.t}</text>`;
+  s+=`<circle cx="${p.cx}" cy="${cy}" r="${R}" fill="#fcfcfc" stroke="#e2e2e2" stroke-dasharray="4 4"/>`;
+  mem.forEach(x=>{
+   const dx=x.o[p.a]-jp[p.a],dy=x.o[p.b]-jp[p.b];
+   const L=Math.hypot(dx,dy);if(L<1e-6)return;
+   const ex=p.cx+dx*sc,ey=cy-dy*sc;
+   const isMain=j.main&&x.m.r.id===j.main.id;
+   const col=isMain?'#c62828':x.m.thru?'#8a8a8a':'#2e7d32';
+   const w=isMain?3.4:x.m.thru?1.8:2.2;
+   const dash=x.m.thru?' stroke-dasharray="6 4"':'';
+   s+=`<line x1="${p.cx}" y1="${cy}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="${col}" stroke-width="${w}"${dash}/>`;
+   const px=p.cx+dx*sc*0.72,py=cy-dy*sc*0.72;
+   if(L*sc>36)s+=`<text x="${px.toFixed(1)}" y="${(py-3).toFixed(1)}" font-size="9" fill="#123" text-anchor="middle">${esc(x.m.r.name)}</text>`;
+   const tx=p.cx+dx*sc*0.44,ty=cy-dy*sc*0.44;
+   if(L*sc>70)s+=`<text x="${tx.toFixed(1)}" y="${(ty+9).toFixed(1)}" font-size="8" fill="#678" text-anchor="middle">${cutShort(x.m.E)}</text>`});
+  /* узел по центру */
+  if(j.type==='support')s+=`<path d="M${p.cx-7},${cy+2} L${p.cx+7},${cy+2} L${p.cx},${cy+10} Z" fill="#ffb020" stroke="#a87400"/>`;
+  s+=`<circle cx="${p.cx}" cy="${cy}" r="4" fill="${j.type==='support'?'#ffb020':'#111'}" stroke="#fff" stroke-width="1.2"/>`});
+ s+=`<text x="4" y="${Hh-6}" font-size="8.5" fill="#555">Состав: ${esc(j.members.map(m=>m.r.name+' ('+cutShort(m.E)+')').join(', ').slice(0,118))}</text>`;
+ return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" xmlns="http://www.w3.org/2000/svg">${s}</svg>`;
+}
+/* --- план сборки: вид XZ, цвет по этапам --- */
+const ASM_COL=['#ff5470','#38a1ff','#ffd23f','#ff7a45','#35e0ff','#a78bfa'];
+function svgAsmPlan(plan){
+ const W=940,Hh=380,m=34;
+ let mnX=1e12,mxX=-1e12,mnZ=1e12,mxZ=-1e12;
+ M.nodes.forEach(n=>{mnX=Math.min(mnX,n.p.x);mxX=Math.max(mxX,n.p.x);
+  mnZ=Math.min(mnZ,n.p.z);mxZ=Math.max(mxZ,n.p.z)});
+ const spanX=Math.max(1,mxX-mnX),spanZ=Math.max(1,mxZ-mnZ);
+ const sc=Math.min((W-2*m)/spanX,(Hh-2*m-16)/spanZ);
+ const ox=(W-spanX*sc)/2,oy=Hh-m-spanZ*sc;
+ const px=x=>ox+(x-mnX)*sc,py=z=>oy+(mxZ-z)*sc; /* z вверх по экрану: опоры снизу */
+ const st=new Map();plan.stages.forEach(s2=>s2.rods.forEach(r=>st.set(r.id,s2.n)));
+ let s=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#fff"/>`;
+ M.rods.forEach(r=>{const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
+  const n=st.get(r.id)||1;
+  s+=`<line x1="${px(a.p.x).toFixed(1)}" y1="${py(a.p.z).toFixed(1)}" x2="${px(b.p.x).toFixed(1)}" y2="${py(b.p.z).toFixed(1)}" stroke="${ASM_COL[(n-1)%6]}" stroke-width="2.6" stroke-linecap="round" opacity="0.92"/>`});
+ M.nodes.forEach(n=>{if(n.type!=='support'&&n.type!=='fixed')return;
+  const X=px(n.p.x),Y=py(n.p.z);
+  s+=`<path d="M${(X-7).toFixed(1)},${Y+3} L${(X+7).toFixed(1)},${Y+3} L${X.toFixed(1)},${Y+12} Z" fill="#ffb020" stroke="#a87400"/>`});
+ s+=`<text x="4" y="13" font-size="10" fill="#444">Вид сбоку (XZ) — детали окрашены по этапам сборки</text>`;
+ return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" xmlns="http://www.w3.org/2000/svg">${s}</svg>`;
+}
 /* --- расширенный HTML-отчёт --- */
 function buildReportHTML(shots){
  if(typeof rodSig==='function'&&calc.sig!==rodSig()){runCalc();if(!calc.res)return ''}
@@ -228,6 +386,12 @@ function buildReportHTML(shots){
  const top=[...R.res].sort((a,b)=>b.ur-a.ur).slice(0,12);
  const over=R.res.filter(r=>r.ur>1);
  const stock=elemStock();
+ /* Шаг 5: данные новых разделов — раскрой (позиции), узлы, план сборки */
+ const cutG=(typeof cutGroups==='function')?cutGroups():null;
+ const jointsMap=(typeof nodeJoints==='function')?nodeJoints():new Map();
+ const jgs=(typeof jointGroups==='function')?jointGroups(jointsMap):[];
+ const plan=(typeof assemblyPlan==='function')?assemblyPlan():{stages:[],issues:[]};
+ const name2pos={};if(cutG)cutG.grs.forEach(g=>g.groups.forEach(gp=>gp.parts.forEach(nm=>{name2pos[nm]=gp.pos})));
  const kinds={};M.rods.forEach(r=>{const s=rodSec(r);kinds[s.name]=(kinds[s.name]||0)+1});
  const imgMap={};shots.forEach(s=>imgMap[s.t]=s.data);
  const beams=elemGroups().filter(g=>g.pts.some(n=>n.type==='support'||n.type==='fixed')&&g.pts.length>=2)
@@ -259,18 +423,36 @@ ${R.reactArr.map(r=>`<tr><td>${esc(r.name)}</td><td><b>${r.F.toFixed(1)}</b></td
 <h2>5. Схемы раскроя (штабы мерного проката)</h2>
 <div style="font-size:11px;color:#555">Склейка соосных стержней в элементы через узлы-носители; штабы мерной длины, first-fit.</div>
 ${stock.grs.map(g=>`<h3 style="font-size:13px;margin:10px 0 2px">${esc(g.sec.name)} — ${g.nStock} штаб × ${g.sec.sell_len_m||12} м • утил. ${(g.util*100).toFixed(0)}% • ${g.mass.toFixed(0)} кг</h3>${svgStocks(g)}`).join('')}
-<h2>6. Смета металла</h2>
+<h2>6. Чертежи запилов (позиции одинаковых деталей)</h2>
+<div style="font-size:11px;color:#555">Один чертёж на позицию Д-n: детали с одинаковой длиной и одинаковыми запилами обоих концов. Верх — заготовка в масштабе (ось, узлы, линии реза, размеры); низ — укрупнённые торцы, углы истинные. Вынос со знаком: у Т-подреза/вложения отрицательный — конец не доходит до оси.</div>
+${cutG?cutG.grs.map(g=>g.groups.map(gp=>svgCutPos(g.sec,gp)).join('')).join(''):'<i>нет данных раскроя</i>'}
+<h2>7. Схемы стыковки узлов</h2>
+<div style="font-size:11px;color:#555">Классификация узлов (опора/T/K/X/N/угловой/сквозной); одинаковые схемы сгруппированы. Красный — основной элемент, серый пунктир — проходной стык, зелёный — ветви; подпись у ветви — тип реза.</div>
+${jgs.length?jgs.map(g=>`<div style="margin-top:12px"><div style="font-size:12.5px"><b>${esc(g.j.clsTxt)}</b> — ${g.nodes.length} узл.: ${esc(g.nodes.join(', '))}${g.j.main?` • основной: ${esc(g.j.main.name)}`:''}</div>${svgJoint(g.j)}</div>`).join(''):'<i>нет данных узлов</i>'}
+<h2>8. План сборки и проверки</h2>
+<div style="font-size:11px;color:#555">Отраслевая последовательность: столбы → нижний пояс → стойки → верхний пояс → прогоны → укосины. Позиции — из раскроя (раздел 6).</div>
+<table><tr><th>этап</th><th>операция</th><th>деталей</th><th>позиций</th><th>состав (детали / позиции)</th></tr>
+${plan.stages.map(s2=>{const posSet=[...new Set(s2.rods.map(r=>name2pos[r.name]).filter(Boolean))];
+ const names=s2.rods.map(r=>r.name);
+ return`<tr><td><b>${s2.n}</b></td><td>${esc(s2.txt)}</td><td>${s2.rods.length}</td><td>${posSet.length}</td><td style="font-size:11px">${esc(names.join(', '))}<br><span style="color:#555">позиции: ${esc(posSet.join(', '))}</span></td></tr>`}).join('')}
+</table>
+<div style="font-size:11px;margin:8px 0 2px">${plan.stages.map((s2,i)=>`<span style="display:inline-block;margin-right:14px"><span style="color:${ASM_COL[i%6]};font-size:15px">■</span> ${s2.n}. ${esc(s2.txt.split(':')[0])}</span>`).join('')}</div>
+${svgAsmPlan(plan)}
+${plan.issues.length?`<div style="font-size:12.5px;margin-top:10px"><b>Проверки (${plan.issues.length}): ${plan.issues.filter(i2=>i2.sev==='err').length} ошиб. • ${plan.issues.filter(i2=>i2.sev!=='err').length} предупр.</b></div>
+<table><tr><th></th><th>этап</th><th>проверка</th></tr>
+${plan.issues.map(is=>`<tr class="${is.sev==='err'?'bad':'warn2'}"><td>${is.sev==='err'?'✖':'⚠'}</td><td>${is.stage==null?'—':is.stage}</td><td>${esc(is.txt)}</td></tr>`).join('')}</table>`:'<div class="kv"><span>Проверки</span><b style="color:#070">нарушений не найдено</b></div>'}
+<h2>9. Смета металла</h2>
 <table><tr><th>сечение</th><th>шт</th><th>L загот., м</th><th>покупка, м</th><th>масса, кг</th><th>₽/м</th><th>стоимость, ₽</th></tr>
 ${stock.grs.map(g=>`<tr><td>${esc(g.sec.name)}</td><td>${g.nStock}</td><td>${(g.total/1000).toFixed(1)}</td><td>${(g.nStock*(g.sec.sell_len_m||12)).toFixed(1)}</td><td>${g.mass.toFixed(0)}</td><td>${g.sec.price_rub_m||0}</td><td>${Math.round(g.cost).toLocaleString('ru')}</td></tr>`).join('')}
 <tr><td colspan="4"><b>ИТОГО покупка</b></td><td><b>${stock.mass.toFixed(0)}</b></td><td></td><td><b>${Math.round(stock.cost).toLocaleString('ru')}</b></td></tr></table>
 <div class="kv"><span>Металл по осям (справка)</span><b>${R.mass.toFixed(0)} кг • ${Math.round(R.cost).toLocaleString('ru')} ₽</b></div>
-<h2>7. Состав сечений</h2><div class="kv">${Object.entries(kinds).map(([k,n])=>`<span>${esc(k)}</span><b>× ${n}</b>`).join(' • ')}</div>
-<h2>8. Методика</h2><div style="font-size:12px;color:#333">
+<h2>10. Состав сечений</h2><div class="kv">${Object.entries(kinds).map(([k,n])=>`<span>${esc(k)}</span><b>× ${n}</b>`).join(' • ')}</div>
+<h2>11. Методика</h2><div style="font-size:12px;color:#333">
 Снег/эксплуатационная/ветровые нагрузки — пространственное приведение по геометрии рядов (ширины из соседних рядов прогонов/поясов, шаг рам), СП 20.13330.<br>
 UR: сжатие+изгиб — N/(φ·A·Ry) + (|M₂|/Wy+|M₃|/Wx)·(1−0.8n)/Ry; растяжение+изгиб — N/(A·Ry)+(|M₂|/Wy+|M₃|/Wx)/Ry; φ(λ), λ=min(L/i).<br>
 Расчётная схема: стержни режутся по пересекающим узлам (основная модель не изменяется); узел «опора» — полная заделка; «узел» — жёсткое включение.<br>
-Раскрой: склейка соосных стержней в элементы; штабы мерного проката, first-fit. Сварные швы/стыки в смету не включены.</div>
-<h2>9. Отказ от ответственности</h2><div style="font-size:11.5px;color:#555;border:1px solid #999;padding:8px;border-radius:6px">
+Раскрой: единое ядро запилов cutCore — торец опоры 90°, сквозной стык без запила, угловой запил по биссектрисе (θ=90°−α/2, вынос за узел), Т-подрез/вложение в полость основного (конец не доходит до оси — вынос вычитается из L загот). Позиции — группировка одинаковых деталей. Проверки сборки: коллизии тел (segClosest), углы раскосов 30–60° (EC3/CIDECT), взаимная подрезка тел в узлах (зазор ≥ t₁+t₂ или нахлёст ≥25%), поэтапность (нет «висящих» деталей). Склейка соосных стержней в элементы; штабы мерного проката, first-fit. Сварные швы/стыки в смету не включены.</div>
+<h2>12. Отказ от ответственности</h2><div style="font-size:11.5px;color:#555;border:1px solid #999;padding:8px;border-radius:6px">
 ФЕРМА·CAD — инструмент предварительной оценки. Расчёт выполнен по упрощённой стержневой КЭ-модели: без узловой податливости, эксцентриситетов, местной устойчивости стержней и пластин, усталости, температурных воздействий, монтажных нагрузок и проверок сварных швов; нагрузки и коэффициенты сочетаний — типовые, без учёта фактических снеговых/ветровых районов по картам СП, снеговых гололёдных комбинаций, сейсмики и полной нормативной базы (СП 16.13330, СП 20.13330, ГОСТ 8509/8510/8639, СНиП II-23).<br>
 <b>Настоящий отчёт не является расчётной документацией</b>, не проходит экспертизу и не может служить основанием для производства работ, изготовления металлоконструкций и приёмки объектов. Несущие конструкции должны проектироваться квалифицированной проектной организацией с проверкой независимым сертифицированным расчётным комплексом.</div>
 <div style="margin-top:14px;font-size:11px;color:#666">Автор: <b>DENstis</b> • <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a> • ФЕРМА·CAD v38 • ${new Date().toLocaleString('ru')}</div>`;

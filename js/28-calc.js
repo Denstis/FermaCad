@@ -1047,36 +1047,39 @@ function assemblyPlan(force){
  const plan={stages,issues,sig};
  calc.plan=plan;calc.planSig=sig;
  return plan}
-function openCutModal(){const pl=cutPlan(),bySec=new Map();
-pl.forEach(it=>{const a=bySec.get(it.sec.id)||{sec:it.sec,items:[]};a.items.push(it);bySec.set(it.sec.id,a)});
-const grs=[...bySec.values()].map(gr=>{const items=gr.items.slice().sort((x,y)=>y.Ls-x.Ls);
- const bin=Math.round((gr.sec.sell_len_m||12)*1000),bins=[];
- items.forEach(it=>{let placed=false;
-  for(let i=0;i<bins.length;i++)if(bins[i]>=it.Ls){bins[i]-=it.Ls;placed=true;break}
-  if(!placed)bins.push(bin-it.Ls)});
- const total=items.reduce((s,i2)=>s+i2.Ls,0),stockLen=bins.length*bin;
- /* Шаг 3 (docs/FABRICATION.md §4.5): группировка ОДИНАКОВЫХ деталей внутри
-    сечения — ключ (Ls, запил A, запил B): одинаковые длина и оба реза = одна
-    позиция раскроя с количеством. Порядок: Ls ↓ (как и раньше). */
- const gmap=new Map();
- items.forEach(it=>{const k=it.Ls+'|'+it.A.txt+'|'+Math.round(it.A.e)+'|'+it.B.txt+'|'+Math.round(it.B.e);
-  const g2=gmap.get(k)||{La:it.La,Ls:it.Ls,A:it.A,B:it.B,parts:[]};
-  g2.parts.push(it.r.name);gmap.set(k,g2)});
- const groups=[...gmap.values()].sort((x,y)=>y.Ls-x.Ls);
- return{sec:gr.sec,items,groups,nStock:bins.length,util:stockLen?total/stockLen:0,total,
-  mass:(gr.sec.mass_kg_m||0)*stockLen/1000,cost:(gr.sec.price_rub_m||0)*stockLen/1000}}).sort((a,b)=>b.total-a.total);
-let csv='Сечение;Поз;Кол-во;Детали;L ось мм;+запил A;+запил B;L заготовок мм;Запил A;Запил B\n',posNo=0;
+/* Единый группировщик раскроя (шаг 5, FABRICATION §4.5): одинаковые детали
+   внутри сечения (ключ: Ls, запил A, запил B) → позиции Д-n со сквозной
+   нумерацией. Одна логика для модалки (openCutModal) и отчёта (31-report:
+   чертежи запилов) — номера позиций совпадают во всех разделах. */
+function cutGroups(){const pl=cutPlan(),bySec=new Map();
+ pl.forEach(it=>{const a=bySec.get(it.sec.id)||{sec:it.sec,items:[]};a.items.push(it);bySec.set(it.sec.id,a)});
+ const grs=[...bySec.values()].map(gr=>{const items=gr.items.slice().sort((x,y)=>y.Ls-x.Ls);
+  const bin=Math.round((gr.sec.sell_len_m||12)*1000),bins=[];
+  items.forEach(it=>{let placed=false;
+   for(let i=0;i<bins.length;i++)if(bins[i]>=it.Ls){bins[i]-=it.Ls;placed=true;break}
+   if(!placed)bins.push(bin-it.Ls)});
+  const total=items.reduce((s,i2)=>s+i2.Ls,0),stockLen=bins.length*bin;
+  const gmap=new Map();
+  items.forEach(it=>{const k=it.Ls+'|'+it.A.txt+'|'+Math.round(it.A.e)+'|'+it.B.txt+'|'+Math.round(it.B.e);
+   const g2=gmap.get(k)||{La:it.La,Ls:it.Ls,A:it.A,B:it.B,parts:[]};
+   g2.parts.push(it.r.name);gmap.set(k,g2)});
+  const groups=[...gmap.values()].sort((x,y)=>y.Ls-x.Ls);
+  return{sec:gr.sec,items,groups,nStock:bins.length,util:stockLen?total/stockLen:0,total,
+   mass:(gr.sec.mass_kg_m||0)*stockLen/1000,cost:(gr.sec.price_rub_m||0)*stockLen/1000}}).sort((a,b)=>b.total-a.total);
+ let posNo=0;grs.forEach(g2=>g2.groups.forEach(gp=>{gp.pos='Д-'+(++posNo)}));
+ return{pl,grs,nPos:posNo}}
+function openCutModal(){const {pl,grs,nPos}=cutGroups();
+let csv='Сечение;Поз;Кол-во;Детали;L ось мм;+запил A;+запил B;L заготовок мм;Запил A;Запил B\n';
 const ex=pl.find(it=>/запил \d/.test(it.A.txt+it.B.txt));
 const sgn=v=>(v>0?'+':'')+Math.round(v);
 const exH=ex?`Пример ${esc(ex.r.name)}: А «${esc(ex.A.txt)}» ${sgn(endLenAdd(ex.A))} мм, Б «${esc(ex.B.txt)}» ${sgn(endLenAdd(ex.B))} мм → заготовок ${ex.Ls} мм (ось ${ex.La} мм)`:
  'Пример: угол 90° → запилам 45°; заготовок = ось + (h/2)·ctg(α/2) с обоих концов';
 const rows=grs.map(g2=>{
- const posRows=g2.groups.map(gp=>{const pos='Д-'+(++posNo);
+ const posRows=g2.groups.map(gp=>{const pos=gp.pos;
   const vA=endLenAdd(gp.A),vB=endLenAdd(gp.B),sA=(vA>0?'+':'')+vA,sB=(vB>0?'+':'')+vB;
   csv+=`"${g2.sec.name}";${pos};${gp.parts.length};"${gp.parts.join(', ')}";${gp.La};${vA};${vB};${gp.Ls};"${gp.A.txt}";"${gp.B.txt}"\n`;
   return`<tr><td class="mono"><b>${pos}</b></td><td class="mono"><b>${gp.parts.length}</b></td><td>${esc(gp.parts.join(', '))}</td><td class="mono">${gp.La}</td><td class="mono">${sA}</td><td class="mono">${sB}</td><td class="mono"><b>${gp.Ls}</b></td><td class="mono dim2">${esc(gp.A.txt)} • ${esc(gp.B.txt)}</td></tr>`}).join('');
  return`<tr class="grp"><td colspan="8"><b>${esc(g2.sec.name)}</b> — ${g2.groups.length} поз. / ${g2.items.length} дет. • ${g2.nStock} штаб × ${g2.sec.sell_len_m||12} м • утил. ${(g2.util*100).toFixed(0)}% • ${g2.mass.toFixed(0)} кг • ${Math.round(g2.cost).toLocaleString('ru')} ₽</td></tr>`+posRows}).join('');
-const nPos=posNo;
 const mass=grs.reduce((s,g2)=>s+g2.mass,0),cost=grs.reduce((s,g2)=>s+g2.cost,0),
  totL=grs.reduce((s,g2)=>s+g2.total,0),stockL=grs.reduce((s,g2)=>s+g2.nStock*Math.round((g2.sec.sell_len_m||12)*1000),0);
 /* Шаг 4 (docs/FABRICATION.md §4.7): предупреждения проверок сборки — в начало модалки.
@@ -1094,8 +1097,10 @@ const warnBlock=AP.issues.length?
  <details style="margin-top:2px"><summary style="cursor:pointer">⚠ Показать предупреждения (${aWarns.length})</summary>
  ${aWarns.map(is=>`<div>⚠ [${esc(ACODE[is.code]||is.code)}] ${esc(is.txt)}</div>`).join('')}
  </details></div>`:'';
+/* сжатый план сборки в модалке (FABRICATION §4.7) — полный в HTML-отчёте */
+const planShort=AP.stages?AP.stages.map(s=>`${s.n}. ${s.txt.split(':')[0]} (${s.rods.length})`).join(' → '):'';
 openModal('РАСКРОЙ — резы и запилы по биссектрисе',
-`${warnBlock}<div class="hint2">Длина заготовки = длина осей + выносы запилов (у Т-подреза/вложения вынос ВЫЧИТАЕТСЯ — конец впритык к стенке либо вложен в полость и не доходит до оси на e; см. 3D-модель). Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
+`${warnBlock}${planShort?`<div class="hint2"><b>План сборки:</b> ${planShort}</div>`:''}<div class="hint2">Длина заготовки = длина осей + выносы запилов (у Т-подреза/вложения вынос ВЫЧИТАЕТСЯ — конец впритык к стенке либо вложен в полость и не доходит до оси на e; см. 3D-модель). Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
 <div class="kv"><span>Пример расчёта</span><b style="font-size:11px">${exH}</b></div>
 <table class="calcTab wide"><tr><th>поз</th><th>кол</th><th>детали</th><th>L ось</th><th>+A</th><th>+B</th><th>L загот</th><th>запилы (A • Б)</th></tr>${rows}</table>
 <div class="kv"><span>Позиций раскроя / деталей</span><b>${nPos} / ${pl.length}</b></div>
