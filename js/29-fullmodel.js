@@ -56,9 +56,9 @@ function endInfo(S,X,v,nid,segAt){
   const e=Math.min(nest?sFar:sOut,S.L*0.4);
   return{kind:nest?'nest':'T',e,nest,sOut:Math.min(sOut,S.L*0.4)}}
  const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
- const al=ang(v,m.d),nb=fN([v[0]+m.d[0],v[1]+m.d[1],v[2]+m.d[2]]);
+ const al=ang(v,m.d),nb=fN([v[0]-m.d[0],v[1]-m.d[1],v[2]-m.d[2]]);
  if(!nb)return{kind:'free'};
- return{kind:'miter',nb,c2:Math.max(.08,nb[0]*v[0]+nb[1]*v[1]+nb[2]*v[2]),al}}
+ return{kind:'miter',nb,c2:Math.max(.08,Math.abs(nb[0]*v[0]+nb[1]*v[1]+nb[2]*v[2])),al}}
 function buildFullModel(){
  if(window._gFull){clearGroup(window._gFull)}
  if(window._gWeld){clearGroup(window._gWeld)}

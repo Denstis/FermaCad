@@ -11,17 +11,26 @@ function elemGroups(){
   if(ka[0]===kb[kb.length-1])return b.concat(a.slice(1));return null};
  M.rods.forEach(r=>{if(seen.has(r.id))return;seen.add(r.id);
   const pts=seqOf(r);if(pts.length<2)return;
-  const item={r,pts};groups.push(item);
+  const item={r,pts,rods:[r]};groups.push(item);
   let frontier=[item];
   while(frontier.length){const nf=[];
    M.rods.forEach(o=>{if(seen.has(o.id))return;const op=seqOf(o);
-    for(const g of frontier){const m=join(g.pts,op);if(m){g.pts=m;g.rodLen=(g.rodLen||0)+rodLen(o);seen.add(o.id);nf.push(g);break}}});
+    for(const g of frontier){const m=join(g.pts,op);if(m){g.pts=m;g.rodLen=(g.rodLen||0)+rodLen(o);g.rods.push(o);seen.add(o.id);nf.push(g);break}}});
    frontier=nf}});
  return groups;
 }
 /* --- деформированные тела: стержень разворачивается ПО ИЗОГНУТОЙ ОСЕВОЙ ---
    поле перемещений: u(x)=lerp(uA+θA×(x−pA), uB+θB×(x−pB)) + (e2·d2+e3·d3)·sin(πt)·scale
    (раньше: жёсткая коробка между смещёнными концами — при заделанных опорах невидима) */
+/* внутренние узлы стержня — то же деление, что в solveFrame: hosts + узлы на оси (±25 мм) */
+function rodSplitIds(r){const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return[];
+ const v0=b.p.clone().sub(a.p),L0=v0.length();if(L0<10)return[];
+ const u0=v0.clone().multiplyScalar(1/L0);const hs=new Map();
+ M.nodes.forEach(n=>{if(n.id===r.a||n.id===r.b)return;
+  const isHost=(n.host&&n.host.rod===r.id)||(n.hosts||[]).some(h=>h&&h.rod===r.id);
+  const w=n.p.clone().sub(a.p),t=w.dot(u0)/L0;if(t<=0.002||t>=0.998)return;
+  if(isHost||w.clone().addScaledVector(u0,-t*L0).length()<25)hs.set(n.id,t)});
+ return[...hs.entries()].sort((p,q)=>p[1]-q[1]).map(e=>e[0])}
 function deflBodies(group){
  const R=calc.res;if(!R)return;
  const nidx=new Map(R.nodeOrder.map((id,i)=>[id,i]));
@@ -29,32 +38,43 @@ function deflBodies(group){
  M.rods.forEach(rd=>{
   const rr=calc.byId.get(String(rd.id));if(!rr)return;
   const A=M.nodes.get(rd.a),B=M.nodes.get(rd.b);if(!A||!B)return;
-  const sec=rodSec(rd),bw=sec.b_mm||60,bh=sec.h_mm||60;
+  const sec=rodSec(rd);
   const e1=B.p.clone().sub(A.p);const L=e1.length();if(L<40)return;e1.multiplyScalar(1/L);
   let e2=V3(-e1.y,e1.x,0);if(e2.lengthSq()<1e-9)e2=V3(1,0,0);e2.normalize();
   const e3=new THREE.Vector3().crossVectors(e1,e2);
-  const ia=nidx.get(rd.a),ib=nidx.get(rd.b);
-  const uA=ia==null?V3():V3(R.u[ia*6],R.u[ia*6+1],R.u[ia*6+2]);
-  const thA=ia==null?V3():V3(R.u[ia*6+3],R.u[ia*6+4],R.u[ia*6+5]);
-  const uB=ib==null?V3():V3(R.u[ib*6],R.u[ib*6+1],R.u[ib*6+2]);
-  const thB=ib==null?V3():V3(R.u[ib*6+3],R.u[ib*6+4],R.u[ib*6+5]);
-  const bulge=e2.clone().multiplyScalar(rr.d2||0).add(e3.clone().multiplyScalar(rr.d3||0));
+  const dof=id=>{const i=nidx.get(id);if(i==null)return[V3(),V3()];
+   return[V3(R.u[i*6],R.u[i*6+1],R.u[i*6+2]),V3(R.u[i*6+3],R.u[i*6+4],R.u[i*6+5])]};
+  /* последовательность расчётных узлов: концы + узлы внутри стержня — то же деление, что в solveFrame;
+     в узле прогнутый стержень проходит через ФЭМ-смещение узла, местный изгиб — по частям */
+  const ids=[rd.a,...(typeof rodSplitIds==='function'?rodSplitIds(rd):[]),rd.b];
+  const seqN=ids.map(i=>M.nodes.get(i)).filter(n=>n);if(seqN.length<2)return;
+  const segs=(rr.segs&&rr.segs.length===seqN.length-1)?rr.segs:null;
   const col=(calc._rodCol&&calc._rodCol.get(rd.id))||new THREE.Color(0xffc53d);
   const mat=new THREE.MeshStandardMaterial({color:col,metalness:.25,roughness:.6,side:THREE.DoubleSide});
   const pts=secContours(sec)[0];              /* внешний контур сечения (8 точек) */
   const rot=sec.kind==='rhs';
   const cts=pts.map(([x,y])=>rot?[y,x]:[x,y]);
-  const NS=18;const rings=[];
-  for(let i=0;i<=NS;i++){const t=i/NS;
-   const base=A.p.clone().lerp(B.p,t);
-   const xa=A.p.clone().lerp(B.p,t).sub(A.p);
-   const ua=uA.clone().add(new THREE.Vector3().crossVectors(thA,xa));
-   const xb=A.p.clone().lerp(B.p,t).sub(B.p);
-   const ub=uB.clone().add(new THREE.Vector3().crossVectors(thB,xb));
-   const c=base.clone().add(ua.clone().lerp(ub,t))
-     .add(bulge.clone().multiplyScalar(Math.sin(Math.PI*t)*s));
-   const ring=cts.map(([x,y])=>c.clone().addScaledVector(e2,x).addScaledVector(e3,y));
-   rings.push(ring)}
+  const rings=[];
+  for(let k=0;k<seqN.length-1;k++){
+   const nA=seqN[k],nB=seqN[k+1];
+   const vp=nB.p.clone().sub(nA.p);const Lp=vp.length();if(Lp<10)continue;
+   const e1p=vp.clone().multiplyScalar(1/Lp);
+   let e2p=AZ.clone().cross(e1p);if(e2p.lengthSq()<1e-8)e2p=AY.clone().cross(e1p);
+   e2p.normalize();const e3p=e1p.clone().cross(e2p).normalize();
+   const sg=segs?segs[k]:{d2:rr.d2,d3:rr.d3};
+   const bulge=e2p.clone().multiplyScalar(sg.d2||0).add(e3p.clone().multiplyScalar(sg.d3||0));
+   const da=dof(nA.id),db=dof(nB.id);
+   const NSp=Math.max(2,Math.round(18*Lp/L));
+   for(let i=(k?1:0);i<=NSp;i++){const t=i/NSp;
+    const base=nA.p.clone().lerp(nB.p,t);
+    const xa=base.clone().sub(nA.p),xb=base.clone().sub(nB.p);
+    const ua=da[0].clone().add(new THREE.Vector3().crossVectors(da[1],xa));
+    const ub=db[0].clone().add(new THREE.Vector3().crossVectors(db[1],xb));
+    const c=base.clone().add(ua.clone().lerp(ub,t))
+      .add(bulge.clone().multiplyScalar(Math.sin(Math.PI*t)*s));
+    rings.push(cts.map(([x,y])=>c.clone().addScaledVector(e2,x).addScaledVector(e3,y)))}}
+  if(rings.length<2)return;
+  const NS=rings.length-1;
   const pos=[],idx=[];
   const nR=rings[0].length;
   for(const ring of rings)for(const p of ring)pos.push(p.x,p.y,p.z);
@@ -124,12 +144,17 @@ function svgStocks(g){
 function secNameOf(r){const s=rodSec(r);return s?s.name:'—'}
 /* --- склейка элементов в заготовки мерного проката (для схемы раскроя отчёта) --- */
 function elemStock(){
- const groups=elemGroups().map(g=>{const sec=rodSec(g.r);
-  const L=Math.round(g.pts.reduce((s,p,i)=>i?s+p.p.distanceTo(g.pts[i-1].p):s,0));
-  return{g,sec,L}}).filter(x=>x.L>49);
+ /* склейка соосных стержней режется по сечениям: разные сечения — разные штабы/строки сметы */
+ const items=[];
+ elemGroups().forEach(g=>{
+  let run=null;
+  (g.rods||[g.r]).forEach(r=>{const sec=rodSec(r),L=rodLen(r);
+   if(run&&run.sec.id===sec.id){run.len+=L;run.names.push(r.name)}
+   else{run={sec,len:L,names:[r.name],r};items.push(run)}})});
+ const groups=items.filter(x=>x.len>49).map(it=>({sec:it.sec,L:Math.round(it.len),g:{r:it.r},names:it.names}));
  const bySec=new Map();
  groups.forEach(it=>{const a=bySec.get(it.sec.id)||{sec:it.sec,items:[]};
-  a.items.push({r:{name:it.g.r.name},Ls:it.L});bySec.set(it.sec.id,a)});
+  a.items.push({r:{name:it.names.join(', ')},Ls:it.L});bySec.set(it.sec.id,a)});
  const grs=[...bySec.values()].map(gr=>{const bin=Math.round((gr.sec.sell_len_m||12)*1000),bins=[];
   gr.items.slice().sort((x,y)=>y.Ls-x.Ls).forEach(it=>{let placed=false;
    for(const b2 of bins)if(b2.rem>=it.Ls){b2.rem-=it.Ls;b2.items.push(it);placed=true;break}
@@ -187,6 +212,7 @@ function svgBeam(g,R){
 }
 /* --- расширенный HTML-отчёт --- */
 function buildReportHTML(shots){
+ if(typeof rodSig==='function'&&calc.sig!==rodSig()){runCalc();if(!calc.res)return ''}
  const R=calc.res,l=calc.loads,proj=$('#projName').value||'Каркас';
  const top=[...R.res].sort((a,b)=>b.ur-a.ur).slice(0,12);
  const over=R.res.filter(r=>r.ur>1);

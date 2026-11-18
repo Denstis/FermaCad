@@ -159,7 +159,7 @@ function solveFrame(){
   for(let i=0;i<12;i++)for(let j=0;j<12;j++){let v=0;for(let t=0;t<12;t++)v+=T[t*12+i]*k[t*12+j];Tk[i*12+j]=v}
   for(let i=0;i<12;i++)for(let j=0;j<12;j++){let v=0;for(let t=0;t<12;t++)v+=Tk[i*12+t]*T[t*12+j];KE[i*12+j]=v}
   els.push({r,a,b,L,p,E,Ry,R,T,KE,k,ia:idx.get(r.a),ib:idx.get(r.b),sec:s,secName:s.name,matName:m.name,qv:[0,0,0]})}
- calc._elsN=els.length;if(!els.length)return{err:'Нет стержней'};
+ calc._elsN=els.length;calc._els=els;if(!els.length)return{err:'Нет стержней'};
  const box=new THREE.Box3();nodes.forEach(n=>box.expandByPoint(n.p));
  const yMin=box.min.y,yMax=box.max.y;
  const L2=calc.loads,mult=calc.factor;
@@ -199,7 +199,7 @@ function solveFrame(){
  els.forEach(e=>{const q=e.qv,R=e.R,L=e.L;
   const q1=q[0]*R[0].x+q[1]*R[1].x+q[2]*R[2].x,q2=q[0]*R[0].y+q[1]*R[1].y+q[2]*R[2].y,q3=q[0]*R[0].z+q[1]*R[1].z+q[2]*R[2].z;
   e.qloc=[q1,q2,q3];
-  e.f0=[-q1*L/2,-q2*L/2,-q3*L/2,0,q3*L*L/12,-q2*L*L/12,-q1*L/2,-q2*L/2,-q3*L/2,0,-q3*L*L/12,q2*L*L/12];
+  e.f0=[q1*L/2,q2*L/2,q3*L/2,0,-q3*L*L/12,q2*L*L/12,q1*L/2,q2*L/2,q3*L/2,0,q3*L*L/12,-q2*L*L/12];
   const dofs=[];for(let i=0;i<12;i++)dofs.push(fmap.get((i<6?e.ia:e.ib)*6+(i%6)));
   for(let i=0;i<12;i++){const gi=dofs[i];if(gi===undefined)continue;
    for(let j=0;j<12;j++){const gj=dofs[j];if(gj===undefined)continue;K[gi*nf+gj]+=e.KE[i*12+j]}}
@@ -234,15 +234,15 @@ function solveFrame(){
   const Ns=[],Ms=[],URs=[];
   for(let i=0;i<=8;i++){const s=L*i/8,r2=L-s;
    const N=fe[6]+q1*r2;
-   const M2=fe[11]+fe[7]*r2+q2*r2*r2/2;
-   const M3=-fe[10]+fe[8]*r2+q3*r2*r2/2;
+   const M2=-fe[11]+fe[7]*r2+q2*r2*r2/2;
+   const M3=fe[10]-fe[8]*r2+q3*r2*r2/2;
    const M=Math.hypot(M2,M3);
    const nnc=Math.max(0,-N)/(phi*p.A*e.Ry),mst=(Math.abs(M2)/p.Wy+Math.abs(M3)/p.Wx)/e.Ry;
    Ns.push(N);Ms.push(M);URs.push(N>=0?N/(p.A*e.Ry)+mst:nnc+mst*Math.max(0,1-.8*nnc))}
   const Ncomp=Math.max(0,-Math.min(...Ns)),Nt=Math.max(0,Math.max(...Ns)),Mmax=Math.max(...Ms),ur=Math.max(...URs);
   const M2a=fe[11]+fe[7]*L+q2*L*L/2,M3a=-fe[10]+fe[8]*L+q3*L*L/2;
-  const d2=5*q2*L**4/(384*e.E*p.Iy)-(M2a+fe[11])*L*L/(16*e.E*p.Iy);
-  const d3=5*q3*L**4/(384*e.E*p.Ix)-(M3a-fe[10])*L*L/(16*e.E*p.Ix);
+  const d2=5*q2*L**4/(384*e.E*p.Iy)+(fe[4]+M2a)*L*L/(16*e.E*p.Iy);
+  const d3=5*q3*L**4/(384*e.E*p.Ix)+(fe[10]+M3a)*L*L/(16*e.E*p.Ix);
   const e1v=e.R[0];
   const um=[0,1,2].map(d=>(u[e.ia*6+d]+u[e.ib*6+d])/2);
   const along=um[0]*e1v.x+um[1]*e1v.y+um[2]*e1v.z;
@@ -261,8 +261,9 @@ function solveFrame(){
  res.forEach(rr=>{const k=String(rr.id).split('#')[0];
   const sm=rr.Ns.map((N,i)=>[rr.t0+(rr.t1-rr.t0)*i/8,N,rr.Ms[i],rr.URs[i]]);
   let a=agg.get(k);
-  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||M.rods.get(Number(k))||{}).name||rr.name},sm};agg.set(k,a)}
+  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||M.rods.get(Number(k))||{}).name||rr.name,segs:[{t0:rr.t0,t1:rr.t1,L:rr.L,d2:rr.d2,d3:rr.d3}]},sm};agg.set(k,a)}
   else{a.sm.push(...sm);const p0=a.row;
+   (p0.segs=p0.segs||[]).push({t0:rr.t0,t1:rr.t1,L:rr.L,d2:rr.d2,d3:rr.d3});
    if(rr.defl>p0.defl)p0.defl=rr.defl;
    if(rr.Ncomp>p0.Ncomp)p0.Ncomp=rr.Ncomp;
    if(rr.Nt>p0.Nt)p0.Nt=rr.Nt;
@@ -359,9 +360,25 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
    if(perp.lengthSq()<1e-9)return;perp.normalize();
    const col=(calc._rodCol&&calc._rodCol.get(rd.id))||new THREE.Color(0xffc53d);
    const mat=new THREE.LineBasicMaterial({color:col,linewidth:2});
-   const pts=[];const N=20;
-   for(let i=0;i<=N;i++){const t=i/N;
-    pts.push(na.p.clone().addScaledVector(e1,L*t).addScaledVector(perp,rr.defl*s2*Math.sin(Math.PI*t)))}
+   const dP=id=>{const i=nidx.get(id);if(i==null)return 0;
+    return R.u[i*6]*perp.x+R.u[i*6+1]*perp.y+R.u[i*6+2]*perp.z};
+   const ids=[rd.a,...(typeof rodSplitIds==='function'?rodSplitIds(rd):[]),rd.b];
+   const seqN=ids.map(i=>M.nodes.get(i)).filter(n=>n);if(seqN.length<2)return;
+   const segs=(rr.segs&&rr.segs.length===seqN.length-1)?rr.segs:null;
+   const pts=[];
+   for(let k=0;k<seqN.length-1;k++){
+    const nA=seqN[k],nB=seqN[k+1];const vp=nB.p.clone().sub(nA.p);const Lp=vp.length();if(Lp<10)continue;
+    const e1p=vp.clone().multiplyScalar(1/Lp);
+    let e2p=AZ.clone().cross(e1p);if(e2p.lengthSq()<1e-8)e2p=AX.clone().cross(e1p);
+    e2p.normalize();const e3p=e1p.clone().cross(e2p).normalize();
+    const sg=segs?segs[k]:{d2:rr.defl,d3:0};
+    const bDot=(sg.d2||0)*e2p.dot(perp)+(sg.d3||0)*e3p.dot(perp);
+    const dA=dP(nA.id),dB=dP(nB.id);
+    const Np=Math.max(4,Math.round(20*Lp/L));
+    for(let i=(k?1:0);i<=Np;i++){const t=i/Np;
+     const off=(dA+(dB-dA)*t)+bDot*Math.sin(Math.PI*t)*s2;
+     pts.push(nA.p.clone().addScaledVector(e1p,Lp*t).addScaledVector(perp,off))}}
+   if(pts.length<2)return;
    gPlan.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat))});
   gPlan.visible=true;
  }else gPlan.visible=false;
@@ -381,9 +398,10 @@ function calcRead(rodId){const rd=$('#calcRead');if(!rd)return;
  const rr=calc.byId.get(String(rodId));if(!rr){rd.textContent='';return}
  rd.textContent=`${rr.name} • ${rr.secName} • сж ${(rr.Ncomp/1000).toFixed(1)} / раср ${(rr.Nt/1000).toFixed(1)} кН • M ${(rr.Mmax/1e6).toFixed(1)} кН·м • UR ${rr.ur.toFixed(2)} • f ${rr.defl.toFixed(1)} мм`}
 /* ---------- run + results panel ---------- */
+function rodSig(){try{return [...M.rods.values()].map(r=>r.id+':'+rodSec(r).id).join('|')+'#'+JSON.stringify(calc.loads)+'#'+calc.factor}catch(e){return ''}}
 function runCalc(){const t0=performance.now();const R=solveFrame();
  if(!R||R.err){toast((R&&R.err)||'Расчёт не выполнен',{type:'err',timeout:5000});return}
- calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));
+ calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));calc.sig=rodSig();
  drawCalc();renderCalcResults();
  toast(`РАСЧЁТ: ${R.res.length} стержней, ${Math.round(performance.now()-t0)} мс • UR max ${R.maxUR.toFixed(2)} (${R.urRod})`,
   {type:R.maxUR>1?'warn':'ok',timeout:6000})}
@@ -456,7 +474,7 @@ function autoSections(){
  const pass=Object.keys(etF.u).every(t=>etF.u[t]<=T+1e-9&&(etF.d[t]||0)<=1+1e-9);
  if(!pass){restore();R=solveFrame();if(R.err){toast('Подбор не удался',{type:'warn'});return}}
  const t1=steel();
- calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));
+ calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));calc.sig=rodSig();
  afterChange();
  drawCalc();renderCalcResults();
  const etR=evalT(R);
@@ -472,6 +490,117 @@ function autoSections(){
   <div class="kv"><span>Итераций пересчёта</span><b>${it}</b></div>
   <div class="hint2">${esc(list)} • Ctrl+Z — отменить</div>`);
  toast(`Подбор сечений: ${pass?'равная прочность':'исходные сечения восстановлены'} • сталь ${t1.m.toFixed(0)} кг • UR max ${maxUf.toFixed(2)}`,
+  {type:pass?'ok':'warn',timeout:8000})}
+/* ---------- умный подбор сечений: физическая модель «требуемое сечение по усилиям» ---------- */
+function reqIdx(rr,cands,T,optDefl,Ry,E,pCur){
+ /* минимальный индекс каталога под текущие усилия стержня: UR(N,M) <= T + (опц.) прогиб */
+ const L=rr.L||1;
+ let IyN=0,IxN=0;
+ if(optDefl){const lim=L/200-(rr.nodalD||0);
+  if(lim>0){IyN=Math.abs(rr.d2||0)*pCur.Iy/lim;IxN=Math.abs(rr.d3||0)*pCur.Ix/lim}}
+ const Ns=rr.Ns||[0],Ms=rr.Ms||[0];
+ for(let i=0;i<cands.length;i++){const p=secProps(cands[i]);
+  if(p.Iy<IyN||p.Ix<IxN)continue;
+  const phi=phiBar(L/Math.min(p.ix,p.iy),E,Ry);
+  let ok=true;
+  for(let k=0;k<Ns.length;k++){const N=Ns[k],mst=(Ms[k]||0)*(1/p.Wy+1/p.Wx)/Ry;
+   const nc=Math.max(0,-N)/(phi*p.A*Ry);
+   const ur=N>=0?N/(p.A*Ry)+mst:nc+mst*Math.max(0,1-.8*nc);
+   if(ur>T){ok=false;break}}
+  if(ok)return i}
+ return cands.length-1}
+function smartSections(){
+ if(!M.rods.size){toast('Нет стержней',{type:'warn'});return}
+ const cands=NR_SECTIONS.filter(s=>s.kind==='shs'||s.kind==='rhs')
+  .sort((a,b)=>calc.optCrit==='cost'?(a.price_rub_m-b.price_rub_m)||(a.mass_kg_m-b.mass_kg_m):a.mass_kg_m-b.mass_kg_m);
+ if(cands.length<2){toast('Мало сечений в каталоге',{type:'warn'});return}
+ const orig=new Map([...M.rods].map(([k,r])=>[k,r.sec]));
+ const restore=()=>orig.forEach((s,k)=>{const r=M.rods.get(k);if(r)r.sec=s});
+ pushUndo();
+ const T=calc.optTarget,types=[...new Set([...M.rods.values()].map(r=>r.type))];
+ const steel=()=>{let m=0,c=0;M.rods.forEach(r=>{const s=rodSec(r);if(s){m+=s.mass_kg_m*rodLen(r)/1000;c+=(s.price_rub_m||0)*rodLen(r)/1000}});return{m,c}};
+ const t0=steel();
+ const cur={},lenT={},cntMap={};
+ M.rods.forEach(r=>{lenT[r.type]=(lenT[r.type]||0)+rodLen(r);
+  (cntMap[r.type]=cntMap[r.type]||new Map()).set(r.sec,(cntMap[r.type].get(r.sec)||0)+1)});
+ types.forEach(t=>{const best=[...cntMap[t].entries()].sort((a,b)=>b[1]-a[1])[0][0];
+  let i=cands.findIndex(c=>c.id===best);
+  if(i<0){i=cands.findIndex(c=>c.id===SEC_DEFAULTS[t]);if(i<0)i=0}
+  cur[t]=i});
+ const apply=()=>M.rods.forEach(r=>r.sec=cands[cur[r.type]].id);
+ const okAll=R=>{if(!R||R.err)return false;
+  for(const rr of R.res){const rd=M.rods.get(+rr.id)||M.rods.get(rr.id);if(!rd)continue;
+   if(rr.ur>T+1e-9)return false;
+   if(calc.optDefl&&rr.L>0&&rr.defl>rr.L/200+1e-9)return false}
+  return true};
+ const _log=[];window._optLog=_log;
+ let nSolve=0;
+ const solve=()=>{apply();nSolve++;const Q=solveFrame();
+  if(Q.err){restore();toast('Подбор прерван: '+Q.err,{type:'warn'});return null}
+  return Q};
+ let R=solve();if(!R)return;
+ let it=0;
+ /* фаза C: ремонт исходной схемы — поднимаем типы-нарушители (монотонно вверх) */
+ for(;it<60&&!okAll(R);it++){
+  const byR=new Map(R.res.map(r=>[String(r.id),r]));
+  const viol={};
+  M.rods.forEach(r=>{const rr=byR.get(String(r.id));if(!rr)return;
+   const s1=rr.ur/(T>1e-9?T:1),s2=(calc.optDefl&&rr.L>0)?rr.defl/(rr.L/200):0;
+   const s=Math.max(s1,s2);
+   if(s>1+1e-9)viol[r.type]=Math.max(viol[r.type]||0,s)});
+  const t=Object.keys(viol).sort((a,b)=>viol[b]-viol[a])[0];
+  if(!t)break;
+  if(cur[t]>=cands.length-1){restore();toast('Подбор: перегруз на вершине каталога — исходные сечения восстановлены',{type:'warn',timeout:8000});return}
+  cur[t]++;R=solve();if(!R)return}
+ if(!okAll(R)){restore();toast('Исходная схема не проходит проверки — восстановлена',{type:'warn'});return}
+ /* фаза A+B: облегчение — прыжок к req (физическая оценка) со шлюзом okAll,
+    иначе шаг вниз по массе; каждое принятие строго снижает стоимость → монотонное завершение */
+ let rnd=0,imp=true;
+ const massT=t=>(cands[cur[t]].mass_kg_m||0)*(lenT[t]||0);
+ for(;imp&&rnd<80;rnd++){imp=false;
+  const byR=new Map(R.res.map(r=>[String(r.id),r]));
+  const req={};
+  M.rods.forEach(r=>{const rr=byR.get(String(r.id));if(!rr)return;
+   const m=rodSteel(r);
+   req[r.type]=Math.max(req[r.type]||0,reqIdx(rr,cands,T,calc.optDefl,m.Ry_mpa,m.E_mpa,secProps(rodSec(r))))});
+  _log.push({ph:'req',it:rnd+1,req,cur:Object.fromEntries(types.map(t=>[t,cur[t]]))});
+  const order=types.slice().sort((a,b)=>(req[a]||0)-(req[b]||0));
+  for(const t of order){
+   if(cur[t]===0)continue;
+   const target=Math.max(0,Math.min(cur[t]-1,req[t]||0));
+   if(target>=cur[t])continue;
+   const sv=cur[t];cur[t]=target;
+   const Rt=solve();
+   if(!Rt)return;
+   if(okAll(Rt)){R=Rt;imp=true;_log.push({ph:'jmp',t:(TYPES[t]||{}).prefix||t,to:target})}
+   else cur[t]=sv}
+  if(imp)continue;
+  const order2=types.slice().sort((a,b)=>massT(b)-massT(a));
+  for(const t of order2){
+   if(cur[t]===0)continue;
+   const sv=cur[t];cur[t]=sv-1;
+   const Rt=solve();
+   if(!Rt)return;
+   if(okAll(Rt)){R=Rt;imp=true;_log.push({ph:'dn',t:(TYPES[t]||{}).prefix||t,to:cur[t]});break}
+   cur[t]=sv}}
+ R=solve();if(!R)return;
+ const pass=okAll(R);
+ if(!pass){restore();R=solveFrame();if(R.err){toast('Подбор не удался',{type:'warn'});return}}
+ const t1=steel();
+ calc.res=R;calc.byId=new Map(R.res.map(r=>[String(r.id),r]));calc.sig=rodSig();
+ afterChange();
+ drawCalc();renderCalcResults();
+ const etU={};R.res.forEach(rr=>{const rd=M.rods.get(+rr.id)||M.rods.get(rr.id);if(rd)etU[rd.type]=Math.max(etU[rd.type]||0,rr.ur)});
+ const list=types.map(t=>{const s=cands[cur[t]];
+  return `${(TYPES[t]||{}).prefix||t}: ${s.name} (UR ${(etU[t]||0).toFixed(2)})`}).join(' • ');
+ const el=$('#calcOut');
+ if(el)el.insertAdjacentHTML('afterbegin',`<div class="kv"><span>Умный подбор (UR ≤ ${T.toFixed(2)})</span><b style="color:${pass?'#7fe8b8':'#ff7a6a'}">${pass?'пройден':'исходные сечения восстановлены'}</b></div>
+  <div class="kv"><span>Сталь</span><b>${t0.m.toFixed(0)} → ${t1.m.toFixed(0)} кг (${t0.m?((t1.m/t0.m-1)*100).toFixed(1):'0'} %)</b></div>
+  <div class="kv"><span>Металл по цене</span><b>${Math.round(t0.c).toLocaleString('ru')} → ${Math.round(t1.c).toLocaleString('ru')} ₽</b></div>
+  <div class="kv"><span>UR max / прогиб max</span><b>${R.maxUR.toFixed(2)} / ${R.maxD.toFixed(1)} мм</b></div>
+  <div class="kv"><span>Пересчётов каркаса</span><b>${nSolve}</b></div>
+  <div class="hint2">${esc(list)} • Ctrl+Z — отменить</div>`);
+ toast(`Умный подбор: ${pass?'пройден':'исходные восстановлены'} • сталь ${t1.m.toFixed(0)} кг • UR max ${R.maxUR.toFixed(2)}`,
   {type:pass?'ok':'warn',timeout:8000})}
 /* ---------- panel ---------- */
 function calcPaneHTML(){const l=calc.loads;
@@ -492,8 +621,8 @@ function calcPaneHTML(){const l=calc.loads;
  <div class="crow"><label>Критерий</label><select id="selOptCrit">${opt('mass',calc.optCrit,'минимум массы')}${opt('cost',calc.optCrit,'минимум стоимости')}</select></div>
  <div class="crow"><label>Макс. использование</label><div class="cval"><input type="range" id="rngOptT" min="30" max="100" step="5" value="${Math.round(calc.optTarget*100)}" style="width:90px"><span class="mono" id="dOptT">${calc.optTarget.toFixed(2)}</span></div></div>
  <label class="ck"><input type="checkbox" id="ckOptDefl" ${calc.optDefl?'checked':''}> Ограничение прогиба f ≤ L/200</label>
- <div class="btnrow"><button class="btn" id="btnOptSec">ПОДБОР СЕЧЕНИЙ</button></div>
- <div class="hint2">Равная прочность: ползунок «Макс. использование» задаёт целевой верх UR (0.3–1.0). Перегруженные типы поднимаются на шаг вверх, самый разгруженный пробно опускается — и остаётся, если весь каркас снова проходит. Прогиб f ≤ L/200 — жёсткое ограничение. Полный пересчёт каркаса на каждом шаге. Отмена — Ctrl+Z.</div>
+ <div class="btnrow"><button class="btn gold" id="btnOptSmart">УМНЫЙ ПОДБОР</button><button class="btn" id="btnOptSec">РАВНАЯ ПРОЧНОСТЬ</button></div>
+ <div class="hint2">«УМНЫЙ ПОДБОР» — физическая модель: для каждого стержня по его усилиям (N, M, прогиб) находится минимальное сечение каталога, тип получает максимум по своим стержням, силы пересчитываются (фикс-поинт), затем спуск по массе. «РАВНАЯ ПРОЧНОСТЬ» — ползунок «Макс. использование» задаёт целевой верх UR (0.3–1.0): перегруженные типы поднимаются, самый разгруженный пробно опускается. Прогиб f ≤ L/200 — жёсткое ограничение в обоих режимах. Отмена — Ctrl+Z.</div>
  <div class="psect">ОТОБРАЖЕНИЕ</div>
  <div class="crow"><label>Тепловая карта</label><select id="selShow">
   <option value="ur" ${calc.show==='ur'?'selected':''}>UR — общая нагрузка</option>
@@ -519,6 +648,7 @@ function bindCalcPane(){const W=(id,ev,fn)=>{const e=$(id);if(e)e.addEventListen
  W('#btnCalcClear','click',()=>{calc.res=null;clearCalcDraw();$('#calcOut').innerHTML='<div class="hint2">Расчёт сброшен.</div>';toast('Результаты сброшены')});
  W('#selShow','change',e=>{calc.show=e.target.value;if(calc.res)drawCalc()});
  W('#ckPalMM','change',e=>{calc.palMM=e.target.checked;if(calc.res)drawCalc()});
+ W('#btnOptSmart','click',()=>smartSections());
  W('#btnOptSec','click',()=>autoSections());
  W('#ckOptDefl','change',e=>{calc.optDefl=e.target.checked});
  W('#selOptCrit','change',e=>{calc.optCrit=e.target.value});
@@ -594,9 +724,11 @@ function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?
   return nest?{txt:`вложено в осн. ${main.o.name}: сечение ${b}×${h} в полость ${Wm-2*tA}×${Hm-2*tA}, глубина ${Math.round(sFar)} мм`,e:Math.min(sFar,L*0.4)}
    :{txt:`T-подрез по осн. ${main.o.name}: ${b}×${h} не входит в полость ${Wm-2*tA}×${Hm-2*tA} — впритык к стенке`,e:Math.min(sOut,L*0.4)}}
  const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
- const al=ang(v,m.d),n=cutN([v[0]+m.d[0],v[1]+m.d[1],v[2]+m.d[2]]);
+ /* биссектриса: нормаль плоскости запила = v − m.d (разделяет стержни),
+    НЕ v + m.d (та плоскость не разделяет — на коньке давала вынос 86.6 вместо 28.9) */
+ const al=ang(v,m.d),n=cutN([v[0]-m.d[0],v[1]-m.d[1],v[2]-m.d[2]]);
  if(!n)return{txt:'без запила',e:0};
- const c2=Math.max(.08,GVEC.dot(n,v));
+ const c2=Math.max(.08,Math.abs(GVEC.dot(n,v)));
  const e=Math.min(((b/2)*Math.abs(GVEC.dot(n,e2))+(h/2)*Math.abs(GVEC.dot(n,e3)))/c2,L*0.4),th=90-al/2;
  return{txt:`запил ${Math.abs(al-90)<1?'90°→45°':Math.round(al)+'°→'+th.toFixed(0)+'°'} (${m.o.name})`,e}}
 function cutPlan(){const out=[];
@@ -636,6 +768,7 @@ openModal('РАСКРОЙ — резы и запилы по биссектрис
 /* ---------- report ---------- */
 function openReportModal(){
  if(!calc.res){toast('Сначала выполните РАСЧЁТ в режиме «Нагрузки»',{type:'warn'});setAppMode('loads');return}
+ if(calc.sig!==rodSig()){runCalc();if(!calc.res)return}
  const shots=(typeof captureShots==='function')?captureShots():[];
  const R=calc.res,l=calc.loads;
  const top=[...R.res].sort((a,b)=>b.ur-a.ur).slice(0,12);

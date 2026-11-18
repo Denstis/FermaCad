@@ -29,24 +29,43 @@ function xnodesAction(){
   if(!a1||!a2||!b1||!b2)continue;
   const s=segClosest(a1.p,a2.p,b1.p,b2.p);
   if(!s||s.dd>TOL)continue;
-  if(s.t<.002||s.t>.998||s.u<.002||s.u>.998)continue; /* строго внутри обоих стержней */
-  found.push({p:s.pa.clone().add(s.pb).multiplyScalar(.5),ra:A.id,rb:B.id,dd:s.dd});
+  const tE=s.t<=.002?'a':(s.t>=.998?'b':null),uE=s.u<=.002?'a':(s.u>=.998?'b':null);
+  if(tE&&uE){const nA=tE==='a'?a1:a2,nB=uE==='a'?b1:b2;
+   if(nA.id!==nB.id)found.push({k:'weld',na:nA.id,nb:nB.id}); /* стык встык: сварить узлы */
+   continue}
+  if(tE||uE){const nE=tE?(tE==='a'?a1:a2):(uE==='a'?b1:b2);
+   found.push({k:'t',nid:nE.id}); /* Т-стык: узловой конец + проходящий стержень */
+   continue}
+  found.push({p:s.pa.clone().add(s.pb).multiplyScalar(.5),ra:A.id,rb:B.id});
  }
  if(!found.length){toast('Пересечений стержней не найдено (допуск '+Math.round(TOL)+' мм)', {type:'info'});return}
- /* один узел на точку: если несколько пар сходятся в одной точке — общий узел со списком hosts */
+ /* один узел на точку: если несколько пар сходятся в одной точке — общий узел со списком hosts;
+    attachNodeToRods делает узел общим для ВСЕХ стержней, оси которых проходят через точку */
  pushUndo();
- let created=0,attached=0;const made=[];
+ let created=0,attached=0,welded=0;const made=[];
  for(const f of found){
+  if(f.k==='weld'){const nb=M.nodes.get(f.nb),na=M.nodes.get(f.na);
+   if(!nb||!na)continue;
+   M.rods.forEach(r=>{if(r.a===nb.id)r.a=na.id;if(r.b===nb.id)r.b=na.id});
+   [...M.rods.values()].forEach(r=>{if(r.a===r.b)M.rods.delete(r.id)});
+   M.nodes.delete(nb.id);welded++;
+   attached+=attachNodeToRods(na);made.push(na);
+   continue}
+  if(f.k==='t'){const n=M.nodes.get(f.nid);if(!n)continue;
+   attached+=attachNodeToRods(n);if(!made.includes(n))made.push(n);
+   continue}
   let n=findNodeAt(f.p,TOL*0.6)||made.find(m=>m.p.distanceTo(f.p)<TOL*0.6);
   if(!n){
    n={id:uid(),p:f.p.clone(),type:'node',name:'Узел-'+(++M.counters.n),hosts:[],host:null};
-   M.nodes.set(n.id,n);bornIds.add(n.id);made.push(n);created++;
+   M.nodes.set(n.id,n);bornIds.add(n.id);created++;
   }
   if(hostNodeOn(n,M.rods.get(f.ra)))attached++;
   if(hostNodeOn(n,M.rods.get(f.rb)))attached++;
+  attached+=attachNodeToRods(n);
+  made.push(n);
  }
  afterChange();
  sel.nodes.clear();sel.rods.clear();selectionChanged();
  const list=made.slice(0,6).map(n=>n.name).join(', ')+(made.length>6?'…':'');
- toast('Пересечения: узлов создано '+created+', посадок на оси '+attached+(created?(' ('+list+')'):''), {type:'ok',timeout:6000});
+ toast('Пересечения: узлов создано '+created+', сварено '+welded+', посадок на оси '+attached+(made.length?(' ('+list+')'):''), {type:'ok',timeout:6000});
 }
