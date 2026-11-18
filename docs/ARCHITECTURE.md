@@ -36,10 +36,10 @@ SPA без сборки: `index.html` подключает 32 классичес
 | 25-keys | хоткеи: handleEscape, MOD_ACTIONS, TOOL_KEYS, F1–F5 |
 | 26-app | главный цикл rAF, режимные переключатели, инициализация |
 | 27-data | каталог NR_SECTIONS (ГОСТ‑трубы: масса, Ix/Iy/Wx/Wy, sell_len_m, цена), материалы |
-| 28-calc | ядро: solveFrame (FEM 12DOF), нагрузки СП 20, UR СП 16, прогибы, тепловые карты, defl‑UI, раскрой, autoSections, панель расчёта |
+| 28-calc | ядро: solveFrame (FEM 12DOF), нагрузки СП 20, UR СП 16, прогибы, тепловые карты, defl‑UI, раскрой (cutCore/cutPlan/cutGroups), nodeJoints, assemblyPlan + проверки, autoSections, панель расчёта |
 | 29-fullmodel | полная модель из профилей: secContours, endInfo (классификация стыков + вложение), призмы, сварные контуры |
 | 30-xnodes | инструмент «узлы на пересечениях стержней» (segClosest, shared hosts) |
-| 31-report | HTML‑отчёт: снимки видов, SVG‑схемы, реакции, раскрой, смета; deflBodies (изогнутые тела) |
+| 31-report | HTML‑отчёт: снимки видов, SVG‑схемы, реакции, раскрой + чертежи запилов (svgCutPos), схемы узлов (svgJoint), план сборки (svgAsmPlan), смета; deflBodies (изогнутые тела) |
 
 ## Потоки данных
 
@@ -52,7 +52,8 @@ M (модель: nodes/rods/planes)  ->  rebuildScene (07)  ->  сцена three
         |                                   |
   autoSections (28) меняет r.sec ----------+
         |
-  cut-таб (28) rodCutLen/cutInfo ; 31-report: HTML
+  cut-таб (28) cutCore/cutPlan/cutGroups + nodeJoints/assemblyPlan;
+  31-report: HTML (разделы 6–8: запилы/узлы/план сборки)
 ```
 
 Ключевые соглашения:
