@@ -905,27 +905,39 @@ const grs=[...bySec.values()].map(gr=>{const items=gr.items.slice().sort((x,y)=>
   for(let i=0;i<bins.length;i++)if(bins[i]>=it.Ls){bins[i]-=it.Ls;placed=true;break}
   if(!placed)bins.push(bin-it.Ls)});
  const total=items.reduce((s,i2)=>s+i2.Ls,0),stockLen=bins.length*bin;
- return{sec:gr.sec,items,nStock:bins.length,util:stockLen?total/stockLen:0,total,
+ /* Шаг 3 (docs/FABRICATION.md §4.5): группировка ОДИНАКОВЫХ деталей внутри
+    сечения — ключ (Ls, запил A, запил B): одинаковые длина и оба реза = одна
+    позиция раскроя с количеством. Порядок: Ls ↓ (как и раньше). */
+ const gmap=new Map();
+ items.forEach(it=>{const k=it.Ls+'|'+it.A.txt+'|'+Math.round(it.A.e)+'|'+it.B.txt+'|'+Math.round(it.B.e);
+  const g2=gmap.get(k)||{La:it.La,Ls:it.Ls,A:it.A,B:it.B,parts:[]};
+  g2.parts.push(it.r.name);gmap.set(k,g2)});
+ const groups=[...gmap.values()].sort((x,y)=>y.Ls-x.Ls);
+ return{sec:gr.sec,items,groups,nStock:bins.length,util:stockLen?total/stockLen:0,total,
   mass:(gr.sec.mass_kg_m||0)*stockLen/1000,cost:(gr.sec.price_rub_m||0)*stockLen/1000}}).sort((a,b)=>b.total-a.total);
-let csv='Сечение;Элемент;L ось мм;+запил A;+запил B;L заготовок мм;Запил A;Запил B\n';
+let csv='Сечение;Поз;Кол-во;Детали;L ось мм;+запил A;+запил B;L заготовок мм;Запил A;Запил B\n',posNo=0;
 const ex=pl.find(it=>/запил \d/.test(it.A.txt+it.B.txt));
 const exH=ex?`Пример ${esc(ex.r.name)}: А «${esc(ex.A.txt)}» +${Math.round(ex.A.e)} мм, Б «${esc(ex.B.txt)}» +${Math.round(ex.B.e)} мм → заготовок ${ex.Ls} мм (ось ${ex.La} мм)`:
  'Пример: угол 90° → запилам 45°; заготовок = ось + (h/2)·ctg(α/2) с обоих концов';
 const rows=grs.map(g2=>{
- g2.items.forEach(it=>csv+=`"${g2.sec.name}";"${it.r.name}";${it.La};${Math.round(it.A.e)};${Math.round(it.B.e)};${it.Ls};"${it.A.txt}";"${it.B.txt}"\n`);
- return`<tr class="grp"><td colspan="6"><b>${esc(g2.sec.name)}</b> — ${g2.nStock} штаб × ${g2.sec.sell_len_m||12} м • утил. ${(g2.util*100).toFixed(0)}% • ${g2.mass.toFixed(0)} кг • ${Math.round(g2.cost).toLocaleString('ru')} ₽</td></tr>`+
-  g2.items.map(it=>`<tr><td>${esc(it.r.name)}</td><td class="mono">${it.La}</td><td class="mono">+${Math.round(it.A.e)}</td><td class="mono">+${Math.round(it.B.e)}</td><td class="mono"><b>${it.Ls}</b></td><td class="mono dim2">${esc(it.A.txt)} • ${esc(it.B.txt)}</td></tr>`).join('')}).join('');
+ const posRows=g2.groups.map(gp=>{const pos='Д-'+(++posNo);
+  csv+=`"${g2.sec.name}";${pos};${gp.parts.length};"${gp.parts.join(', ')}";${gp.La};${Math.round(gp.A.e)};${Math.round(gp.B.e)};${gp.Ls};"${gp.A.txt}";"${gp.B.txt}"\n`;
+  return`<tr><td class="mono"><b>${pos}</b></td><td class="mono"><b>${gp.parts.length}</b></td><td>${esc(gp.parts.join(', '))}</td><td class="mono">${gp.La}</td><td class="mono">+${Math.round(gp.A.e)}</td><td class="mono">+${Math.round(gp.B.e)}</td><td class="mono"><b>${gp.Ls}</b></td><td class="mono dim2">${esc(gp.A.txt)} • ${esc(gp.B.txt)}</td></tr>`}).join('');
+ return`<tr class="grp"><td colspan="8"><b>${esc(g2.sec.name)}</b> — ${g2.groups.length} поз. / ${g2.items.length} дет. • ${g2.nStock} штаб × ${g2.sec.sell_len_m||12} м • утил. ${(g2.util*100).toFixed(0)}% • ${g2.mass.toFixed(0)} кг • ${Math.round(g2.cost).toLocaleString('ru')} ₽</td></tr>`+posRows}).join('');
+const nPos=posNo;
 const mass=grs.reduce((s,g2)=>s+g2.mass,0),cost=grs.reduce((s,g2)=>s+g2.cost,0),
  totL=grs.reduce((s,g2)=>s+g2.total,0),stockL=grs.reduce((s,g2)=>s+g2.nStock*Math.round((g2.sec.sell_len_m||12)*1000),0);
 openModal('РАСКРОЙ — резы и запилы по биссектрисе',
-`<div class="hint2">Длина заготовки = длина осей + выносы запилов. Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез), вынос = h/2 осн. / sin β.</div>
+`<div class="hint2">Длина заготовки = длина осей + выносы запилов. Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
 <div class="kv"><span>Пример расчёта</span><b style="font-size:11px">${exH}</b></div>
-<table class="calcTab wide"><tr><th>элемент</th><th>L ось</th><th>+A</th><th>+B</th><th>L загот</th><th>запилы (A • Б)</th></tr>${rows}</table>
+<table class="calcTab wide"><tr><th>поз</th><th>кол</th><th>детали</th><th>L ось</th><th>+A</th><th>+B</th><th>L загот</th><th>запилы (A • Б)</th></tr>${rows}</table>
+<div class="kv"><span>Позиций раскроя / деталей</span><b>${nPos} / ${pl.length}</b></div>
 <div class="kv"><span>Длина заготовок (с запилами)</span><b>${(totL/1000).toFixed(1)} м</b></div>
 <div class="kv"><span>В мерном прокате (${grs.reduce((s,g2)=>s+g2.nStock,0)} шт)</span><b>${(stockL/1000).toFixed(1)} м • отход ${stockL?(100-totL/stockL*100).toFixed(0):0}%</b></div>
 <div class="kv"><span>Сталь в покупке (с отходами)</span><b>${mass.toFixed(0)} кг</b></div>
 <div class="kv"><span>Ориентировочная стоимость металла</span><b>${Math.round(cost).toLocaleString('ru')} ₽</b></div>`,
-[{label:'Копировать CSV',keep:true,fn:()=>navigator.clipboard.writeText(csv).then(()=>toast('CSV скопирован',{type:'ok'}))},{label:'Закрыть',fn:closeModal}])}
+[{label:'Копировать CSV',keep:true,fn:()=>navigator.clipboard.writeText(csv).then(()=>toast('CSV скопирован',{type:'ok'}))},{label:'Закрыть',fn:closeModal}]);
+$('#modalCard').classList.add('wide')}
 /* ---------- report ---------- */
 function openReportModal(){
  if(!calc.res){toast('Сначала выполните РАСЧЁТ в режиме «Нагрузки»',{type:'warn'});setAppMode('loads');return}
