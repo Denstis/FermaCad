@@ -897,6 +897,151 @@ function nodeJoints(force){
    ends:members.filter(m2=>!m2.thru),thru:members.filter(m2=>m2.thru),warn:[]})});
  calc.joints=joints;calc.jointsSig=sig;
  return joints}
+/* ---------- Шаг 4 (docs/FABRICATION.md 4.3-4.4): план поэтапной сборки и проверки --
+   assemblyPlan() -> {stages, issues}. Этапы по отраслевой последовательности
+   (FABRICATION 2.1): столбы -> нижний пояс -> стойки -> верхний пояс -> прогоны -> укосины.
+   Проверки: (1) "висит в воздухе" - жадная поэтапная установка: деталь ставится, если хотя бы
+   один её конец соединён с уже установленным; (2) коллизии тел - segClosest по не-соседним
+   стержням, тиры по вписанной/описанной полуокружности сечения; (3) углы укосин 30-60
+   (EC3/CIDECT) и двойной индивидуальный запил; (4) пересечение тел в узле - детали не
+   запилены друг к другу (gap >= t1+t2 или нахлест >=25%, либо взаимный запил по биссектрисе). */
+const ASM_STAGES=[
+ {n:1,txt:'Установка столбов: опоры (анкеры) и колонны',types:['column']},
+ {n:2,txt:'Нижний пояс: запил концов, приварка к столбам',types:['bottom']},
+ {n:3,txt:'Стойки к нижнему поясу',types:['post']},
+ {n:4,txt:'Верхний пояс (стропила)',types:['top']},
+ {n:5,txt:'Прогоны и связи каркаса',types:['purlin','custom']},
+ {n:6,txt:'Укосины: раскосы, опорные раскосы, связи',types:['diag','sdiag','brace']}];
+function stageOf(r){const s=ASM_STAGES.find(s=>s.types.includes(r.type));return s?s.n:5}
+function planSig(){return jointsSig()+'|'+[...M.rods.values()].map(r=>r.id+':'+r.type).join(',')}
+function assemblyPlan(force){
+ const sig=planSig();
+ if(!force&&calc.plan&&calc.planSig===sig)return calc.plan;
+ const J=nodeJoints();
+ const rods=[...M.rods.values()].filter(r=>M.nodes.get(r.a)&&M.nodes.get(r.b));
+ const stage=new Map(rods.map(r=>[r.id,stageOf(r)]));
+ const stages=ASM_STAGES.map(s=>({...s,rods:rods.filter(r=>stage.get(r.id)===s.n)}));
+ const issues=[];
+ const add=(sev,code,txt,rdls,st)=>issues.push({sev,code,txt,
+  rods:(rdls||[]).map(x=>typeof x==='string'?x:x.name),stage:(st==null?null:st)});
+ /* --- (1) Поэтапная установка: деталь не должна "висеть в воздухе" --- */
+ const instR=new Set(),instN=new Set();
+ M.nodes.forEach((n,id)=>{if(n.type==='support')instN.add(id)});
+ const touch=nid=>{if(instN.has(nid))return true;
+  const n=M.nodes.get(nid);if(!n)return false;
+  if(n.host&&instR.has(n.host.rod))return true;
+  if((n.hosts||[]).some(h=>h&&instR.has(h.rod)))return true;
+  for(const id of instR){const o=M.rods.get(id);if(o&&(o.a===nid||o.b===nid))return true}
+  return false};
+ for(const s of stages){
+  let pend=s.rods.slice(),moved=true;
+  while(moved){moved=false;
+   for(let i=0;i<pend.length;i++){const r=pend[i];
+    if(touch(r.a)||touch(r.b)){instR.add(r.id);instN.add(r.a);instN.add(r.b);
+     pend.splice(i,1);i--;moved=true}}}
+  pend.forEach(r=>add('err','float','Этап '+s.n+': '+r.name+
+   ' не опирается ни на один установленный ранее элемент — висит в воздухе',[r],s.n))}
+ if(calc.res&&typeof calc.res.err==='string'&&/без опоры/i.test(calc.res.err))
+  add('err','float','Расчёт: '+calc.res.err,[],null);
+ /* --- (2) Коллизии тел: не-соседние стержни (без общего узла и посадок на оси) --- */
+ const connected=(A,B)=>{const ids=[A.a,A.b];
+  if(ids.includes(B.a)||ids.includes(B.b))return true;
+  for(const nid of ids){const n=M.nodes.get(nid);if(!n)continue;
+   if(n.host&&n.host.rod===B.id)return true;
+   if((n.hosts||[]).some(h=>h&&h.rod===B.id))return true}
+  for(const nid of [B.a,B.b]){const n=M.nodes.get(nid);if(!n)continue;
+   if(n.host&&n.host.rod===A.id)return true;
+   if((n.hosts||[]).some(h=>h&&h.rod===A.id))return true}
+  return false};
+ const secRad=r=>{const s=rodSec(r);return s};
+ for(let i=0;i<rods.length;i++)for(let j=i+1;j<rods.length;j++){
+  const A=rods[i],B=rods[j];
+  if(connected(A,B))continue;
+  const a1=M.nodes.get(A.a),a2=M.nodes.get(A.b),b1=M.nodes.get(B.a),b2=M.nodes.get(B.b);
+  const s=segClosest(a1.p,a2.p,b1.p,b2.p);if(!s)continue;
+  const sa=secRad(A),sb=secRad(B);
+  const rInA=Math.min(sa.b_mm||60,sa.h_mm||60)/2,rInB=Math.min(sb.b_mm||60,sb.h_mm||60)/2;
+  const rOutA=Math.hypot(sa.b_mm||60,sa.h_mm||60)/2,rOutB=Math.hypot(sb.b_mm||60,sb.h_mm||60)/2;
+  const st=Math.max(stage.get(A.id),stage.get(B.id));
+  const nm='«'+A.name+'» × «'+B.name+'»';
+  const isBracePair=['diag','sdiag','brace'].includes(A.type)&&['diag','sdiag','brace'].includes(B.type);
+  const mid=s.t>.05&&s.t<.95&&s.u>.05&&s.u<.95;
+  const near=s.t<.02||s.t>.98||s.u<.02||s.u>.98;
+  if(s.dd<rInA+rInB){add('err','collide','Этап '+st+': '+nm+
+   ' — тела пересекаются (оси в '+Math.round(s.dd)+' мм при сумме вписанных '+Math.round(rInA+rInB)+' мм)'+
+   (mid?' — пересечение в чистом поле без узла: посадите узел на пересечении (инструмент X) либо разнесите оси (нахлёст)':
+    isBracePair?' — укосины конфликтуют, измените угол/положение':
+    near?' — посадите узел на пересечении (инструмент X)':''),[A,B],st);continue}
+  if(s.dd<rOutA+rOutB)add('warn','tight','Этап '+st+': '+nm+
+   ' — вплотную (оси в '+Math.round(s.dd)+' мм, габариты до '+Math.round(rOutA+rOutB)+' мм)',[A,B],st)}
+ /* --- (3) Углы укосин 30-60 и двойной запил --- */
+ const braceTypes=['diag','sdiag','brace'];
+ rods.filter(r=>braceTypes.includes(r.type)).forEach(r=>{
+  const A=cutEndData(r,true),B=cutEndData(r,false);
+  [[A,true],[B,false]].forEach(([c,atA])=>{
+   if(c.al!=null&&c.main&&(c.al<30||c.al>60))
+    add('warn','angle','Этап '+stage.get(r.id)+': «'+r.name+'» — угол '+
+     Math.round(c.al)+'° к «'+c.main.name+'» (вне 30–60°, EC3/CIDECT); '+
+     'рекомендуется подогнать точку крепления/угол под 45° для одинаковых запилов',[r],stage.get(r.id))});
+  if(A.kind==='miter'&&B.kind==='miter'&&Math.abs(A.angle-B.angle)>2)
+   add('warn','dbl','Этап '+stage.get(r.id)+': «'+r.name+'» — двойной индивидуальный запил: концы '+
+    Math.round(A.angle)+'° и '+Math.round(B.angle)+'°; рассмотрите смену угла раскоса, чтобы оба конца были одинаковыми',[r],stage.get(r.id))});
+ /* --- (4) Пересечение тел в узле: детали не запилены друг к другу ---
+    Модель материала конца — как в buildFullModel: miter плоскостью через узел
+    (вынос -e..L), T/nest обрезаны на min(e,.45L) с обоих концов (trim),
+    flat — 0..L. Точки тела сканируются по осям e2/e3 (углы и центр). */
+ const frame=(jn,m)=>{const o=M.nodes.get(m.r.a===jn.id?m.r.b:m.r.a);if(!o)return null;
+  const u=cutN(cutV(o.p,jn.p));if(!u)return null;
+  let e2=cutN([-u[1],u[0],0]);if(!e2)e2=[1,0,0];
+  const e3=cutN([u[1]*e2[2]-u[2]*e2[1],u[2]*e2[0]-u[0]*e2[2],u[0]*e2[1]-u[1]*e2[0]])||[0,0,0];
+  const sec=rodSec(m.r),L=Math.hypot(...cutV(jn.p,o.p));
+  const trim=(m.E.kind==='T'||m.E.kind==='nest')?Math.min(m.E.e||0,L*0.45):0;
+  const t0=(m.E.kind==='miter')?-(m.E.e||0):trim;
+  return{u,e2,e3,sec,L,t0,t1:L-trim,e:(m.E.kind==='miter')?(m.E.e||0):0,n:m.E.n||null,
+   id:m.r.id,name:m.r.name}};
+ const inBox=(p,Y)=>{const t=p[0]*Y.u[0]+p[1]*Y.u[1]+p[2]*Y.u[2];
+  if(t<Y.t0-1||t>Y.t1+1)return false;
+  /* грань реза: материал строго ПОЗАДИ плоскости с запасом 0.5 мм —
+     соприкосновение запиленных граней не считается пересечением */
+  if(Y.n&&(p[0]*Y.n[0]+p[1]*Y.n[1]+p[2]*Y.n[2])>-0.5)return false;
+  const al=p[0]*Y.e2[0]+p[1]*Y.e2[1]+p[2]*Y.e2[2];
+  const be=p[0]*Y.e3[0]+p[1]*Y.e3[1]+p[2]*Y.e3[2];
+  return Math.abs(al)<=(Y.sec.b_mm||60)/2-0.5&&Math.abs(be)<=(Y.sec.h_mm||60)/2-0.5};
+ const overlap=(X,Y)=>{const rX=Math.hypot(X.sec.b_mm||60,X.sec.h_mm||60)/2,
+  rY=Math.hypot(Y.sec.b_mm||60,Y.sec.h_mm||60)/2;
+  const T=Math.min(X.L,3*(rX+rY)),step=Math.max(Math.min(rX,rY)/2,1);
+  const inOwn=(p,P)=>!P.n||(p[0]*P.n[0]+p[1]*P.n[1]+p[2]*P.n[2])<=-0.5;
+  const scan=(P,Q)=>{for(let t=P.t0;t<=Math.min(T,P.t1)+1e-6;t+=step)
+   for(const al of[-1,0,1])for(const be of[-1,0,1]){
+    const p=[0,1,2].map(k=>t*P.u[k]+al*((P.sec.b_mm||60)/2)*P.e2[k]+be*((P.sec.h_mm||60)/2)*P.e3[k]);
+    if(!inOwn(p,P))continue; /* не брать материал, вырезанный СОБСТВЕННЫМ запилом */
+    if(inBox(p,Q))return true}
+   return false};
+  return scan(X,Y)||scan(Y,X)};
+ J.forEach(j=>{
+  const jn=M.nodes.get(j.nid);if(!jn)return;
+  const cands=j.members.filter(m=>!m.thru&&['miter','T','nest','flat'].includes(m.E.kind));
+  if(cands.length<2)return;
+  const fr=new Map();cands.forEach(m=>{const f=frame(jn,m);if(f)fr.set(m.r.id,f)});
+  const hitPairs=[];
+  for(let i=0;i<cands.length;i++)for(let k=i+1;k<cands.length;k++){
+   const ma=cands[i],mb=cands[k];
+   /* взаимный запил (каждый срезан по плоскости соседа) — сидят вплотную, не пересекаются */
+   if(ma.E.main&&ma.E.main.id===mb.r.id&&mb.E.main&&mb.E.main.id===ma.r.id)continue;
+   const fa=fr.get(ma.r.id),fb=fr.get(mb.r.id);
+   if(!fa||!fb)continue;
+   if(overlap(fa,fb))hitPairs.push([ma,mb])}
+  if(!hitPairs.length)return;
+  const tsum=Math.round((rodSec(hitPairs[0][0].r).t_mm||4)+(rodSec(hitPairs[0][1].r).t_mm||4));
+  const clsHint=(j.cls==='K'||j.cls==='X'||j.cls==='N')?
+   ' gap-узел: разнесите раскосы (зазор ≥ t₁+t₂ = '+tsum+' мм) либо нахлёст ≥25%':
+   ' для углового/опорного узла — взаимный запил по биссектрисе либо разнесите узлы';
+  const names=[...new Set(hitPairs.flatMap(p=>[p[0].r.name,p[1].r.name]))];
+  add('warn','nodefit','Узел «'+j.name+'» ('+j.clsTxt+'): тела не запилены друг к другу — '+
+   hitPairs.map(p=>'«'+p[0].r.name+'»×«'+p[1].r.name+'»').join(', ')+clsHint,names,null)});
+ const plan={stages,issues,sig};
+ calc.plan=plan;calc.planSig=sig;
+ return plan}
 function openCutModal(){const pl=cutPlan(),bySec=new Map();
 pl.forEach(it=>{const a=bySec.get(it.sec.id)||{sec:it.sec,items:[]};a.items.push(it);bySec.set(it.sec.id,a)});
 const grs=[...bySec.values()].map(gr=>{const items=gr.items.slice().sort((x,y)=>y.Ls-x.Ls);
@@ -927,8 +1072,23 @@ const rows=grs.map(g2=>{
 const nPos=posNo;
 const mass=grs.reduce((s,g2)=>s+g2.mass,0),cost=grs.reduce((s,g2)=>s+g2.cost,0),
  totL=grs.reduce((s,g2)=>s+g2.total,0),stockL=grs.reduce((s,g2)=>s+g2.nStock*Math.round((g2.sec.sell_len_m||12)*1000),0);
+/* Шаг 4 (docs/FABRICATION.md §4.7): предупреждения проверок сборки — в начало модалки.
+   Ошибки (коллизии, «висит в воздухе») показываем всегда, предупреждения — свёрнутым
+   списком <details>, чтобы не забивать таблицу раскроя. */
+const AP=(typeof assemblyPlan==='function')?assemblyPlan():{issues:[]};
+const aErrs=AP.issues.filter(is=>is.sev==='err'),aWarns=AP.issues.filter(is=>is.sev!=='err');
+const ACODE={float:'висит в воздухе',collide:'коллизии тел',tight:'вплотную',
+ angle:'угол раскоса вне 30–60° (EC3/CIDECT)',dbl:'двойной индивидуальный запил',
+ nodefit:'тела в узле не запилены друг к другу'};
+const warnBlock=AP.issues.length?
+`<div class="hint2" style="border-left:3px solid ${aErrs.length?'#ff5470':'#ffb020'};padding:4px 8px;margin:4px 0">
+ <b>Проверки сборки: ${aErrs.length} ошиб. • ${aWarns.length} предупр.</b>
+ ${aErrs.map(is=>`<div style="color:#ff5470">✖ ${esc(is.txt)}</div>`).join('')}
+ <details style="margin-top:2px"><summary style="cursor:pointer">⚠ Показать предупреждения (${aWarns.length})</summary>
+ ${aWarns.map(is=>`<div>⚠ [${esc(ACODE[is.code]||is.code)}] ${esc(is.txt)}</div>`).join('')}
+ </details></div>`:'';
 openModal('РАСКРОЙ — резы и запилы по биссектрисе',
-`<div class="hint2">Длина заготовки = длина осей + выносы запилов. Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
+`${warnBlock}<div class="hint2">Длина заготовки = длина осей + выносы запилов. Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
 <div class="kv"><span>Пример расчёта</span><b style="font-size:11px">${exH}</b></div>
 <table class="calcTab wide"><tr><th>поз</th><th>кол</th><th>детали</th><th>L ось</th><th>+A</th><th>+B</th><th>L загот</th><th>запилы (A • Б)</th></tr>${rows}</table>
 <div class="kv"><span>Позиций раскроя / деталей</span><b>${nPos} / ${pl.length}</b></div>
@@ -957,7 +1117,7 @@ function openReportModal(){
  <div class="psect">ОПОРНЫЕ РЕАКЦИИ, кН</div>
  <table class="calcTab"><tr><th>опора</th><th>R</th><th>X</th><th>Y</th><th>Z</th></tr>
  ${R.reactArr.map(r=>`<tr><td>${esc(r.name)}</td><td><b>${r.F.toFixed(1)}</b></td><td>${r.fx.toFixed(1)}</td><td>${r.fy.toFixed(1)}</td><td>${r.fz.toFixed(1)}</td></tr>`).join('')}</table>
- <div class="hint2">В HTML-отчёт войдут: 5 видовых схем (включая деформированную), схемы балок с прогибами и N, схемы раскроя по штабам мерного проката, смета, реакции, состав сечений, методика, <b>отказ от ответственности</b>. Автор: DENstis • <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a>.</div>`,
+ <div class="hint2">В HTML-отчёт войдут: 5 видовых схем (включая деформированную), схемы балок с прогибами и N, схемы раскроя по штабам мерного проката (с группировкой одинаковых деталей), схемы стыковки узлов и план поэтапной сборки с проверками (коллизии, углы, «висит в воздухе»), смета, реакции, состав сечений, методика, <b>отказ от ответственности</b>. Автор: DENstis • <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a>.</div>`,
  [{label:'Скачать HTML-отчёт',keep:true,fn:()=>{const html=(typeof buildReportHTML==='function')?buildReportHTML(shots):null;
    if(!html){toast('Модуль отчёта не загружен (31-report.js)',{type:'err'});return}
    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
