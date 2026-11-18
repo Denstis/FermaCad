@@ -753,52 +753,91 @@ function setAppModeQuiet(m){appMode=m;document.body.classList.toggle('app-loads'
 const CUTD=180/Math.PI;
 function cutV(a,b){return[a.x-b.x,a.y-b.y,a.z-b.z]}
 function cutN(u){const l=Math.hypot(u[0],u[1],u[2]);return l>1e-9?[u[0]/l,u[1]/l,u[2]/l]:null}
-function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?r.b:r.a);
- if(!nA||!nB)return{txt:'—',e:0};
- const v=cutN(cutV(nA.p,nB.p));if(!v)return{txt:'—',e:0};
- if(nA.type==='support')return{txt:'без запила — опора',e:0};
- const inc=[];
- M.rods.forEach(o=>{if(o.id===r.id)return;let oe=null;
-  if(o.a===nA.id)oe=M.nodes.get(o.b);else if(o.b===nA.id)oe=M.nodes.get(o.a);
-  if(oe){const d=cutN(cutV(nA.p,oe.p));if(d)inc.push({o,d});return}
-  const thru=(nA.host&&nA.host.rod===o.id)||(nA.hosts||[]).some(h=>h&&h.rod===o.id);
-  if(thru){const oa=M.nodes.get(o.a),ob=M.nodes.get(o.b);if(!oa||!ob)return;
-   const d=cutN(cutV(ob.p,oa.p));if(d){inc.push({o,d});inc.push({o,d:[-d[0],-d[1],-d[2]]})}}});
- if(!inc.length)return{txt:'без запила (свободный край)',e:0};
+/* ЕДИНОЕ ЯДРО РАСКРОЯ (docs/FABRICATION.md §4.1): классификация конца стержня
+   и геометрия запила. Используют обёртки cutEndData (таблица раскроя) и
+   endInfo (3D-призмы) — до v53 логика была продублирована в двух местах
+   с расходящимися порогами.
+   P: {v — единичное направление ОТ конца ВНУТРЬ стержня;
+       L — эталонная длина для ограничения выноса (стержень или сегмент);
+       sec — наше сечение (rodSec); isSupport — узел-опора;
+       selfId — id нашего стержня (отличие сквозного продолжения от чужого соосного);
+       inc — соседние направления в узле [{name,id,d,sec}]: концы соседей
+             + оба ±d для стержней, проходящих через узел (host/hosts)}
+   Возвращает {kind,txt,e,angle,n,e2,e3,al,main,nest,sOut,sFar,weld,groupKey}:
+     kind: 'flat'|'free'|'pass'|'main'|'nest'|'T'|'miter'; e — вынос (мм);
+     angle — угол запила к оси (°; miter: θ=90−α/2); n/e2/e3 — геометрия
+     плоскости реза (для будущих SVG-чертежей); weld — рисовать сварной
+     контур на этом торце (чужой соосный стык встык); groupKey — ключ
+     группировки одинаковых деталей. */
+function cutCore(P){
+ const v=P.v;
+ if(!v)return{kind:'free',txt:'—',e:0,groupKey:'free'};
+ if(P.isSupport)return{kind:'flat',txt:'без запила — опора',e:0,groupKey:'flat'};
+ const inc=P.inc||[];
+ if(!inc.length)return{kind:'free',txt:'без запила (свободный край)',e:0,groupKey:'free'};
  const ang=(u,w)=>Math.acos(clamp(u[0]*w[0]+u[1]*w[1]+u[2]*w[2],-1,1))*CUTD;
- const s=rodSec(r),b=s.b_mm||60,h=s.h_mm||60;
- const L=Math.hypot(...cutV(nA.p,nB.p));
+ const s=P.sec||{},b=s.b_mm||60,h=s.h_mm||60,L=P.L||0;
  let e2=cutN([-v[1],v[0],0]);if(!e2)e2=[1,0,0];
- const e3=cutN([v[1]*e2[2]-v[2]*e2[1],v[2]*e2[0]-v[0]*e2[2],v[0]*e2[1]-v[1]*e2[0]]);
- for(const q of inc)if(ang(v,q.d)>165)return{txt:'без запила (проходной)',e:0};
+ const e3=cutN([v[1]*e2[2]-v[2]*e2[1],v[2]*e2[0]-v[0]*e2[2],v[0]*e2[1]-v[1]*e2[0]])||[0,0,0];
+ /* проходной: соосное продолжение за концом — торец встык, без запила.
+    Своё продолжение (сегменты того же стержня) — кольцо рисует отдельный
+    проход butt-швов; чужой соосный — кольцо здесь (weld). */
+ for(const q of inc)if(ang(v,q.d)>165)return{kind:'pass',txt:'без запила (проходной)',e:0,
+  weld:q.id!==P.selfId,groupKey:'pass'};
+ /* сквозной стык: две ветви в узле образуют прямую (>155°) */
  let pair=null;
  for(let i=0;i<inc.length&&!pair;i++)for(let j=i+1;j<inc.length;j++)
   if(ang(inc[i].d,inc[j].d)>155){pair=[inc[i],inc[j]];break}
  if(pair){
   if(pair.some(q=>ang(v,q.d)>155)){const br=inc.filter(q=>pair.indexOf(q)<0);
-   return{txt:br.length?`без запила (основной; ветвь ${br.map(q=>q.o.name).join(', ')})`:'без запила (проходной)',e:0}}
-  const beta=Math.max(Math.min(...pair.map(q=>ang(v,q.d))),20);
-  const mi=rodSec(pair[0].o).mass_kg_m>=rodSec(pair[1].o).mass_kg_m?0:1;
-  const main=pair[mi],ms=rodSec(main.o);
-  const dM=cutN([main.d[0],main.d[1],main.d[2]]);
+   const mj=pair.find(q=>ang(v,q.d)>155);
+   return{kind:'main',txt:br.length?`без запила (основной; ветвь ${br.map(q=>q.name).join(', ')})`:'без запила (проходной)',
+    e:0,main:{name:mj.name,id:mj.id},groupKey:'main'}}
+  /* ветвь к сквозному основному: main — по массе погонного сечения.
+     Короб main в плоскости сечения (m2 — горизонталь, m3 — сторона 'b' у rhs
+     по конвенции вертикали); луч v через короб: sOut — наружная стенка,
+     sFar — противоположная внутренняя стенка полости. Если сечение ветви
+     влезает в полость main — ВЛОЖЕНИЕ (nest); иначе стык впритык (T). */
+  const mi=pair[0].sec.mass_kg_m>=pair[1].sec.mass_kg_m?0:1;
+  const main=pair[mi],ms=main.sec;
+  const dM=cutN(main.d);
   let m2=cutN([-dM[1],dM[0],0]);if(!m2)m2=[1,0,0];
-  const m3=cutN([dM[1]*m2[2]-dM[2]*m2[1],dM[2]*m2[0]-dM[0]*m2[2],dM[0]*m2[1]-dM[1]*m2[0]]);
+  const m3=cutN([dM[1]*m2[2]-dM[2]*m2[1],dM[2]*m2[0]-dM[0]*m2[2],dM[0]*m2[1]-dM[1]*m2[0]])||[0,0,0];
   const al=Math.abs(v[0]*m2[0]+v[1]*m2[1]+v[2]*m2[2]),ga=Math.abs(v[0]*m3[0]+v[1]*m3[1]+v[2]*m3[2]);
   const Wm=(ms.kind==='rhs'?ms.h_mm:ms.b_mm)||60,Hm=(ms.kind==='rhs'?ms.b_mm:ms.h_mm)||60;
   const tA=ms.t_mm||4;
   const sOut=Math.min(al>1e-6?Wm/(2*al):1e9,ga>1e-6?Hm/(2*ga):1e9);
   const sFar=Math.min(al>1e-6?(Wm-2*tA)/(2*al):1e9,ga>1e-6?(Hm-2*tA)/(2*ga):1e9);
   const nest=Math.min(b,h)<=Math.min(Wm-2*tA,Hm-2*tA)+.5&&Math.max(b,h)<=Math.max(Wm-2*tA,Hm-2*tA)+.5;
-  return nest?{txt:`вложено в осн. ${main.o.name}: сечение ${b}×${h} в полость ${Wm-2*tA}×${Hm-2*tA}, глубина ${Math.round(sFar)} мм`,e:Math.min(sFar,L*0.4)}
-   :{txt:`T-подрез по осн. ${main.o.name}: ${b}×${h} не входит в полость ${Wm-2*tA}×${Hm-2*tA} — впритык к стенке`,e:Math.min(sOut,L*0.4)}}
+  const e=Math.min(nest?sFar:sOut,L*0.4),mj={name:main.name,id:main.id};
+  return nest?{kind:'nest',txt:`вложено в осн. ${main.name}: сечение ${b}×${h} в полость ${Wm-2*tA}×${Hm-2*tA}, глубина ${Math.round(sFar)} мм`,
+    e,nest,sOut:Math.min(sOut,L*0.4),sFar,al:ang(v,main.d),main:mj,groupKey:'nest'}
+   :{kind:'T',txt:`T-подрез по осн. ${main.name}: ${b}×${h} не входит в полость ${Wm-2*tA}×${Hm-2*tA} — впритык к стенке`,
+    e,nest,sOut:Math.min(sOut,L*0.4),sFar,al:ang(v,main.d),main:mj,groupKey:'T'}}
+ /* угловой стык (miter): плоскость реза по биссектрисе */
  const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
  /* биссектриса: нормаль плоскости запила = v − m.d (разделяет стержни),
     НЕ v + m.d (та плоскость не разделяет — на коньке давала вынос 86.6 вместо 28.9) */
  const al=ang(v,m.d),n=cutN([v[0]-m.d[0],v[1]-m.d[1],v[2]-m.d[2]]);
- if(!n)return{txt:'без запила',e:0};
+ if(!n)return{kind:'free',txt:'без запила',e:0,groupKey:'free'};
  const c2=Math.max(.08,Math.abs(GVEC.dot(n,v)));
  const e=Math.min(((b/2)*Math.abs(GVEC.dot(n,e2))+(h/2)*Math.abs(GVEC.dot(n,e3)))/c2,L*0.4),th=90-al/2;
- return{txt:`запил ${Math.abs(al-90)<1?'90°→45°':Math.round(al)+'°→'+th.toFixed(0)+'°'} (${m.o.name})`,e}}
+ return{kind:'miter',txt:`запил ${Math.abs(al-90)<1?'90°→45°':Math.round(al)+'°→'+th.toFixed(0)+'°'} (${m.name})`,
+  e,angle:th,al,n,e2,e3,main:{name:m.name,id:m.id},groupKey:`miter${Math.round(th)}`}}
+/* обёртка: узлы модели → inc[] → ядро (только {txt,e} и ниже по цепочке) */
+function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?r.b:r.a);
+ if(!nA||!nB)return{txt:'—',e:0};
+ const v=cutN(cutV(nA.p,nB.p));if(!v)return{txt:'—',e:0};
+ if(nA.type==='support')return cutCore({v,isSupport:true});
+ const inc=[];
+ M.rods.forEach(o=>{if(o.id===r.id)return;let oe=null;
+  if(o.a===nA.id)oe=M.nodes.get(o.b);else if(o.b===nA.id)oe=M.nodes.get(o.a);
+  if(oe){const d=cutN(cutV(nA.p,oe.p));if(d)inc.push({name:o.name,id:o.id,d,sec:rodSec(o)});return}
+  const thru=(nA.host&&nA.host.rod===o.id)||(nA.hosts||[]).some(h=>h&&h.rod===o.id);
+  if(thru){const oa=M.nodes.get(o.a),ob=M.nodes.get(o.b);if(!oa||!ob)return;
+   const d=cutN(cutV(ob.p,oa.p));if(d){inc.push({name:o.name,id:o.id,d,sec:rodSec(o)});
+    inc.push({name:o.name,id:o.id,d:[-d[0],-d[1],-d[2]],sec:rodSec(o)})}}});
+ return cutCore({v,L:Math.hypot(...cutV(nA.p,nB.p)),sec:rodSec(r),selfId:r.id,inc})}
 function cutPlan(){const out=[];
 M.rods.forEach(r=>{const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
  const La=Math.round(a.p.distanceTo(b.p)),A=cutEndData(r,true),B=cutEndData(r,false);

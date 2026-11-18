@@ -22,44 +22,16 @@ function secContours(s){const b=s.b_mm||60,h=s.h_mm||60,t=s.t_mm||4;
 function weldLine(pts3){const g=new THREE.BufferGeometry().setFromPoints(pts3.map(p=>V3(p[0],p[1],p[2])));
  const m=new THREE.LineBasicMaterial({color:WELD_HEX,transparent:true,opacity:.95,depthTest:true});
  const l=new THREE.LineLoop(g,m);l.renderOrder=3;return l}
-/* классификация конца сегмента для сварных контуров: 'pass'|'main'|'flat'|'free'|'T'|'miter' */
+/* классификация конца сегмента для сварных контуров: обёртка над единым ядром
+   cutCore (js/28-calc.js) — с v53 раскрой и 3D-призмы считаются одной логикой.
+   Возвращает полный результат ядра: kind 'pass'|'main'|'flat'|'free'|'T'|'nest'|'miter',
+   e — вынос, weld — рисовать кольцо (чужой соосный стык встык), n/c2/al — геометрия. */
 function endInfo(S,X,v,nid,segAt){
- const inc=(segAt.get(nid)||[]).filter(s=>s.seg!==S);
- const same=inc.filter(s=>s.seg.r.id===S.r.id);
- const DEG=180/Math.PI,ang=(u,w)=>Math.acos(clamp(u[0]*w[0]+u[1]*w[1]+u[2]*w[2],-1,1))*DEG;
- for(const q of same)if(ang(v,q.d)>165)return{kind:'pass'};
+ const inc=(segAt.get(nid)||[]).filter(s=>s.seg!==S)
+  .map(s=>({name:s.seg.r.name,id:s.seg.r.id,d:s.d,sec:rodSec(s.seg.r)}));
  const nd=M.nodes.get(nid);
- if(nd&&nd.type==='support')return{kind:'flat'};
- if(!inc.length)return{kind:'free'};
- let pair=null;
- for(let i=0;i<inc.length&&!pair;i++)for(let j=i+1;j<inc.length;j++)
-  if(ang(inc[i].d,inc[j].d)>155){pair=[inc[i],inc[j]];break}
- if(pair){
-  if(pair.some(q=>ang(v,q.d)>155))return{kind:'main'};
-  const beta=Math.max(Math.min(...pair.map(q=>ang(v,q.d))),20);
-  const mm=pair.map(q=>rodSec(q.seg.r)),mi=mm[0].mass_kg_m>=mm[1].mass_kg_m?0:1,main=mm[mi];
-  /* коллизии с учётом габарита: короб main в плоскости сечения (m2 — горизонталь,
-     m3 — сторона 'b' у rhs по конвенции вертикали); depth по лучу v через box:
-     sOut — наружная стенка; sFar — противоположная внутренняя стенка полости.
-     Если сечение ветви влезает в полость main (hollow) — это ВЛОЖЕНИЕ (nest):
-     ветва уходит в полость на глубину до внутренней стенки; иначе — стык впритык (T). */
-  const dM=fN(pair[mi].d);
-  let m2=fN([-dM[1],dM[0],0]);if(!m2)m2=[1,0,0];
-  const m3=fN([dM[1]*m2[2]-dM[2]*m2[1],dM[2]*m2[0]-dM[0]*m2[2],dM[0]*m2[1]-dM[1]*m2[0]]);
-  const al=Math.abs(v[0]*m2[0]+v[1]*m2[1]+v[2]*m2[2]),ga=Math.abs(v[0]*m3[0]+v[1]*m3[1]+v[2]*m3[2]);
-  const Wm=(main.kind==='rhs'?main.h_mm:main.b_mm)||60,Hm=(main.kind==='rhs'?main.b_mm:main.h_mm)||60;
-  const tA=main.t_mm||4;
-  const sOut=Math.min(al>1e-6?Wm/(2*al):1e9,ga>1e-6?Hm/(2*ga):1e9);
-  const sFar=Math.min(al>1e-6?(Wm-2*tA)/(2*al):1e9,ga>1e-6?(Hm-2*tA)/(2*ga):1e9);
-  const sb=rodSec(S.r),bB=sb.b_mm||60,hB=sb.h_mm||60;
-  const nest=Math.min(bB,hB)<=Math.min(Wm-2*tA,Hm-2*tA)+.5&&Math.max(bB,hB)<=Math.max(Wm-2*tA,Hm-2*tA)+.5;
-  const e=Math.min(nest?sFar:sOut,S.L*0.4);
-  return{kind:nest?'nest':'T',e,nest,sOut:Math.min(sOut,S.L*0.4)}}
- const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
- const al=ang(v,m.d),nb=fN([v[0]-m.d[0],v[1]-m.d[1],v[2]-m.d[2]]);
- if(!nb)return{kind:'free'};
- return{kind:'miter',nb,c2:Math.max(.08,Math.abs(nb[0]*v[0]+nb[1]*v[1]+nb[2]*v[2])),al}}
-function buildFullModel(){
+ return cutCore({v,L:S.L,sec:rodSec(S.r),selfId:S.r.id,isSupport:!!nd&&nd.type==='support',inc});
+}function buildFullModel(){
  if(window._gFull){clearGroup(window._gFull)}
  if(window._gWeld){clearGroup(window._gWeld)}
  if(!window._gFull){window._gFull=new THREE.Group();scene.add(window._gFull)}
@@ -114,7 +86,7 @@ function buildFullModel(){
   /* ---- сварные контуры: полные сечения на концах с реальным стыком ---- */
   const contours=all;
   const mkWeld=(E,X,v,trim)=>{
-   if(E.kind==='pass'||E.kind==='main'||E.kind==='free')return;
+   if((E.kind==='pass'&&!E.weld)||E.kind==='main'||E.kind==='free')return;   /* pass+weld — чужой соосный стык: кольцо рисуем */
    const t=trim||0;
    contours.forEach(ct=>{
     const pts3=ct.map(([x,y])=>[X.x-v[0]*t+x*e2[0]+y*e3[0]+v[0]*1.2,X.y-v[1]*t+x*e2[1]+y*e3[1]+v[1]*1.2,X.z-v[2]*t+x*e2[2]+y*e3[2]+v[2]*1.2]);
