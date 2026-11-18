@@ -843,6 +843,60 @@ M.rods.forEach(r=>{const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
  const La=Math.round(a.p.distanceTo(b.p)),A=cutEndData(r,true),B=cutEndData(r,false);
  out.push({r,La,Ls:Math.round(La+A.e+B.e),A,B,sec:rodSec(r)})});
 return out}
+/* ---------- Шаг 2 (docs/FABRICATION.md §4.2): классификация узлов, приоритеты ----
+   nodeJoints() → Map<nid, joint>: {id,nid,name,p,type,cls,clsTxt,main,members,ends,
+   thru,nBranch,warn}. Классы: support/empty/free/pass/T/K/X/N/corner (см. JCLS).
+   Приоритет «кто главный»: опора > сквозной стык (main — по массе погонного
+   сечения, как в cutCore) > ветви; у углового узла main=null (оба конца пилятся).
+   Кэш: calc.joints + calc.jointsSig (геометрия+сечения) — отчёт/проверки/схемы. */
+const JCLS={support:'Опора',empty:'Пустой узел',free:'Свободный край',pass:'Сквозной стык',
+ T:'T-узел',K:'K-узел',X:'X-узел',N:'N-узел',corner:'Угловой узел'};
+function jointsSig(){try{return[...M.nodes.values()].map(n=>n.id+':'+n.type+':'+n.p.x.toFixed(2)+','+n.p.y.toFixed(2)+','+n.p.z.toFixed(2)).join('|')+'#'+[...M.rods.values()].map(r=>r.id+':'+r.a+'-'+r.b+':'+(r.sec||'')).join('|')}catch(e){return''}}
+function nodeJoints(force){
+ const sig=jointsSig();
+ if(!force&&calc.joints&&calc.jointsSig===sig)return calc.joints;
+ const joints=new Map(),ANG=(u,w)=>Math.acos(clamp(u[0]*w[0]+u[1]*w[1]+u[2]*w[2],-1,1))*CUTD;
+ M.nodes.forEach((n,nid)=>{
+  const ends=[],thru=[];
+  M.rods.forEach(r=>{
+   const a=M.nodes.get(r.a),b=M.nodes.get(r.b);if(!a||!b)return;
+   if(r.a===nid)ends.push({r,atA:true,v:cutN(cutV(a.p,b.p)),E:cutEndData(r,true)});
+   else if(r.b===nid)ends.push({r,atA:false,v:cutN(cutV(b.p,a.p)),E:cutEndData(r,false)});
+   else{const th=(n.host&&n.host.rod===r.id)||(n.hosts||[]).some(h=>h&&h.rod===r.id);
+    if(th){const d=cutN(cutV(a.p,b.p));if(d)thru.push({r,d,neg:[-d[0],-d[1],-d[2]]})}}});
+  /* кандидаты направлений ОТ узла наружу: концы + обе стороны проходных */
+  const dirs=[];
+  ends.forEach((e,i)=>{if(e.v)dirs.push({i,d:e.v})});
+  thru.forEach(t=>{dirs.push({d:t.d,t});dirs.push({d:t.neg,t})});
+  let pair=null;
+  for(let i=0;i<dirs.length&&!pair;i++)for(let j=i+1;j<dirs.length;j++)
+   if(ANG(dirs[i].d,dirs[j].d)>155){pair=[dirs[i],dirs[j]];break}
+  const rid=x=>x.t?x.t.r.id:ends[x.i].r.id;
+  let cls='corner',main=null,nB=0;
+  if(n.type==='support')cls='support';
+  else if(!ends.length&&!thru.length)cls='empty';
+  else if(pair){
+   const pr=new Set(pair.map(rid));
+   const mainR=[...pr].map(id=>M.rods.get(id)).filter(Boolean)
+    .reduce((x,y)=>!x||rodSec(y).mass_kg_m>rodSec(x).mass_kg_m?y:x,null);
+   if(mainR)main={id:mainR.id,name:mainR.name};
+   const br=new Set([...ends.map(e=>e.r.id),...thru.map(t=>t.r.id)].filter(id=>!pr.has(id)));
+   nB=br.size;
+   if(nB===0)cls='pass';
+   else if(nB===1)cls='T';
+   else if(nB===2){
+    const rep=[...ends.filter(e=>br.has(e.r.id)).map(e=>e.v),
+               ...thru.filter(t=>br.has(t.r.id)).map(t=>t.d)];
+    cls=(rep.length>1&&ANG(rep[0],rep[1])>155)?'X':'K'}
+   else cls='N'}
+  else if(ends.length+thru.length===1)cls='free';
+  const members=[...ends.map(e=>({r:e.r,atA:e.atA,thru:false,E:e.E})),
+   ...thru.map(t=>({r:t.r,atA:null,thru:true,E:{kind:'pass',txt:'без запила (проходной)',e:0,weld:false,groupKey:'pass'}}))];
+  joints.set(nid,{id:nid,nid,name:n.name||nid,p:{x:n.p.x,y:n.p.y,z:n.p.z},type:n.type,
+   cls,clsTxt:JCLS[cls]||cls,main,nBranch:nB,members,
+   ends:members.filter(m2=>!m2.thru),thru:members.filter(m2=>m2.thru),warn:[]})});
+ calc.joints=joints;calc.jointsSig=sig;
+ return joints}
 function openCutModal(){const pl=cutPlan(),bySec=new Map();
 pl.forEach(it=>{const a=bySec.get(it.sec.id)||{sec:it.sec,items:[]};a.items.push(it);bySec.set(it.sec.id,a)});
 const grs=[...bySec.values()].map(gr=>{const items=gr.items.slice().sort((x,y)=>y.Ls-x.Ls);
