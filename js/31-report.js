@@ -40,8 +40,6 @@ function deflBodies(group){
   const A=M.nodes.get(rd.a),B=M.nodes.get(rd.b);if(!A||!B)return;
   const sec=rodSec(rd);
   const e1=B.p.clone().sub(A.p);const L=e1.length();if(L<40)return;e1.multiplyScalar(1/L);
-  let e2=V3(-e1.y,e1.x,0);if(e2.lengthSq()<1e-9)e2=V3(1,0,0);e2.normalize();
-  const e3=new THREE.Vector3().crossVectors(e1,e2);
   const dof=id=>{const i=nidx.get(id);if(i==null)return[V3(),V3()];
    return[V3(R.u[i*6],R.u[i*6+1],R.u[i*6+2]),V3(R.u[i*6+3],R.u[i*6+4],R.u[i*6+5])]};
   /* последовательность расчётных узлов: концы + узлы внутри стержня — то же деление, что в solveFrame;
@@ -61,18 +59,31 @@ function deflBodies(group){
    const e1p=vp.clone().multiplyScalar(1/Lp);
    let e2p=AZ.clone().cross(e1p);if(e2p.lengthSq()<1e-8)e2p=AY.clone().cross(e1p);
    e2p.normalize();const e3p=e1p.clone().cross(e2p).normalize();
-   const sg=segs?segs[k]:{d2:rr.d2,d3:rr.d3};
-   const bulge=e2p.clone().multiplyScalar(sg.d2||0).add(e3p.clone().multiplyScalar(sg.d3||0));
-   const da=dof(nA.id),db=dof(nB.id);
-   const NSp=Math.max(2,Math.round(18*Lp/L));
+   const sg=segs?segs[k]:null;
+   const full=!!(sg&&sg.E!=null&&sg.L>0);
+   const da=full?null:dof(nA.id),db=full?null:dof(nB.id);
+   const d2b=sg?(sg.d2||0):(rr.d2||0),d3b=sg?(sg.d3||0):(rr.d3||0);
+   const bulge=full?null:e2p.clone().multiplyScalar(d2b).addScaledVector(e3p,d3b);
+   const NSp=Math.max(4,Math.round(24*Lp/L));
    for(let i=(k?1:0);i<=NSp;i++){const t=i/NSp;
-    const base=nA.p.clone().lerp(nB.p,t);
-    const xa=base.clone().sub(nA.p),xb=base.clone().sub(nB.p);
-    const ua=da[0].clone().add(new THREE.Vector3().crossVectors(da[1],xa));
-    const ub=db[0].clone().add(new THREE.Vector3().crossVectors(db[1],xb));
-    const c=base.clone().add(ua.clone().lerp(ub,t))
-      .add(bulge.clone().multiplyScalar(Math.sin(Math.PI*t)*s));
-    rings.push(cts.map(([x,y])=>c.clone().addScaledVector(e2,x).addScaledVector(e3,y)))}}
+    const c=nA.p.clone().lerp(nB.p,t);
+    let thv=0,thw=0;
+    if(full){
+     /* точное поле: Эрмит по концевым DOF + частное от q, целиком ×deflScale —
+        ось стержня проходит через смещённые узлы (сварной узел) */
+     const f=deflAt(sg,sg.L,t);
+     c.addScaledVector(e1p,f.u*s).addScaledVector(e2p,f.v*s).addScaledVector(e3p,f.w*s);
+     thv=f.tv*s;thw=f.tw*s;
+    }else{
+     const xa=c.clone().sub(nA.p),xb=c.clone().sub(nB.p);
+     const ua=da[0].clone().add(new THREE.Vector3().crossVectors(da[1],xa));
+     const ub=db[0].clone().add(new THREE.Vector3().crossVectors(db[1],xb));
+     c.add(ua.lerp(ub,t).multiplyScalar(s)).addScaledVector(bulge,Math.sin(Math.PI*t)*s);
+    }
+    rings.push(cts.map(([x,y])=>{
+     const o=e2p.clone().multiplyScalar(x).addScaledVector(e3p,y);
+     if(thv||thw)o.addScaledVector(e1p,-(thv*x+thw*y));  /* наклон сечения по деформированной оси */
+     return c.clone().add(o)}))}}
   if(rings.length<2)return;
   const NS=rings.length-1;
   const pos=[],idx=[];

@@ -143,11 +143,17 @@ function solveFrame(){
   let e2=AZ.clone().cross(e1);if(e2.lengthSq()<1e-8)e2=AY.clone().cross(e1);
   e2.normalize();const e3=e1.clone().cross(e2).normalize();
   const s=rodSec(r),p=secProps(s),m=rodSteel(r),E=m.E_mpa,G=m.G_mpa||79000,Ry=m.Ry_mpa;
+  /* Ориентация сечения: у rhs широкая сторона b развёрнута вдоль e3 (вертикали),
+     поэтому моменты инерции/сопротивления для изгиба обмениваются между e2/e3.
+     I2 — изгиб в плоскости e1-e3 (смещения по e3), I3 — в плоскости e1-e2 (смещения по e2). */
+  const rhs=s.kind==='rhs';
+  const I2=rhs?p.Iy:p.Ix,I3=rhs?p.Ix:p.Iy;
+  const W2=rhs?p.Wy:p.Wx,W3=rhs?p.Wx:p.Wy;
   const k=new Float64Array(144),kd=(i,j,v)=>{k[i*12+j]=v};
   const EA=p.A*E/L,GJ=p.J*G/L;
   kd(0,0,EA);kd(0,6,-EA);kd(6,0,-EA);kd(6,6,EA);
   kd(3,3,GJ);kd(3,9,-GJ);kd(9,3,-GJ);kd(9,9,GJ);
-  const cx=p.Ix*E/L**3,cy=p.Iy*E/L**3;
+  const cx=I2*E/L**3,cy=I3*E/L**3;
   [[1,5,7,11,cy,1],[2,4,8,10,cx,-1]].forEach(([A,B,C,D,c,sg])=>{const cL=c*L,cLL=c*L*L;
    kd(A,A,12*c);kd(A,B,6*sg*cL);kd(A,C,-12*c);kd(A,D,6*sg*cL);
    kd(B,A,6*sg*cL);kd(B,B,4*cLL);kd(B,C,-6*sg*cL);kd(B,D,2*cLL);
@@ -158,7 +164,7 @@ function solveFrame(){
   const Tk=new Float64Array(144),KE=new Float64Array(144);
   for(let i=0;i<12;i++)for(let j=0;j<12;j++){let v=0;for(let t=0;t<12;t++)v+=T[t*12+i]*k[t*12+j];Tk[i*12+j]=v}
   for(let i=0;i<12;i++)for(let j=0;j<12;j++){let v=0;for(let t=0;t<12;t++)v+=Tk[i*12+t]*T[t*12+j];KE[i*12+j]=v}
-  els.push({r,a,b,L,p,E,Ry,R,T,KE,k,ia:idx.get(r.a),ib:idx.get(r.b),sec:s,secName:s.name,matName:m.name,qv:[0,0,0]})}
+  els.push({r,a,b,L,p,E,Ry,R,T,KE,k,ia:idx.get(r.a),ib:idx.get(r.b),sec:s,secName:s.name,matName:m.name,qv:[0,0,0],I2,I3,W2,W3})}
  calc._elsN=els.length;calc._els=els;if(!els.length)return{err:'Нет стержней'};
  const box=new THREE.Box3();nodes.forEach(n=>box.expandByPoint(n.p));
  const yMin=box.min.y,yMax=box.max.y;
@@ -197,7 +203,9 @@ function solveFrame(){
  const K=new Float64Array(nf*nf),F=new Float64Array(nf);
  calc._dbgQ=els.map(e=>[e.r.name,e.L,+(e.qv[2].toFixed(6))]);
  els.forEach(e=>{const q=e.qv,R=e.R,L=e.L;
-  const q1=q[0]*R[0].x+q[1]*R[1].x+q[2]*R[2].x,q2=q[0]*R[0].y+q[1]*R[1].y+q[2]*R[2].y,q3=q[0]*R[0].z+q[1]*R[1].z+q[2]*R[2].z;
+  /* q_loc = R·q_glob (строки R = базис e1,e2,e3); было свёрткой со столбцами (=Rᵀ) —
+      для наклонных/вертикальных членов нагрузка поворачивалась на −2α */
+   const q1=q[0]*R[0].x+q[1]*R[0].y+q[2]*R[0].z,q2=q[0]*R[1].x+q[1]*R[1].y+q[2]*R[1].z,q3=q[0]*R[2].x+q[1]*R[2].y+q[2]*R[2].z;
   e.qloc=[q1,q2,q3];
   e.f0=[q1*L/2,q2*L/2,q3*L/2,0,-q3*L*L/12,q2*L*L/12,q1*L/2,q2*L/2,q3*L/2,0,q3*L*L/12,-q2*L*L/12];
   const dofs=[];for(let i=0;i<12;i++)dofs.push(fmap.get((i<6?e.ia:e.ib)*6+(i%6)));
@@ -226,7 +234,8 @@ function solveFrame(){
  els.forEach(e=>{
   const ug=new Float64Array(12),ul=new Float64Array(12);
   for(let d=0;d<6;d++){ug[d]=u[e.ia*6+d];ug[6+d]=u[e.ib*6+d]}
-  for(let i=0;i<12;i++){let v=0;for(let j=0;j<12;j++)v+=e.T[j*12+i]*ug[j];ul[i]=v}
+  /* u_loc = T·u_glob — согласовано с сборкой KE = Tᵀ·k·T (было Tᵀ·ug) */
+   for(let i=0;i<12;i++){let v=0;for(let j=0;j<12;j++)v+=e.T[i*12+j]*ug[j];ul[i]=v}
   const fe=new Float64Array(12);
   for(let i=0;i<12;i++){let v=0;for(let j=0;j<12;j++)v+=e.k[i*12+j]*ul[j];fe[i]=v+e.f0[i]}
   const[q1,q2,q3]=e.qloc,L=e.L,p=e.p;
@@ -234,22 +243,26 @@ function solveFrame(){
   const Ns=[],Ms=[],URs=[];
   for(let i=0;i<=8;i++){const s=L*i/8,r2=L-s;
    const N=fe[6]+q1*r2;
-   const M2=-fe[11]+fe[7]*r2+q2*r2*r2/2;
-   const M3=fe[10]-fe[8]*r2+q3*r2*r2/2;
-   const M=Math.hypot(M2,M3);
-   const nnc=Math.max(0,-N)/(phi*p.A*e.Ry),mst=(Math.abs(M2)/p.Wy+Math.abs(M3)/p.Wx)/e.Ry;
+   const Me2=fe[10]-fe[8]*r2+q3*r2*r2/2;   /* момент вокруг e2 → прогиб по e3 */
+   const Me3=-fe[11]+fe[7]*r2+q2*r2*r2/2;   /* момент вокруг e3 → прогиб по e2 */
+   const M=Math.hypot(Me2,Me3);
+   const nnc=Math.max(0,-N)/(phi*p.A*e.Ry),mst=(Math.abs(Me2)/e.W2+Math.abs(Me3)/e.W3)/e.Ry;
    Ns.push(N);Ms.push(M);URs.push(N>=0?N/(p.A*e.Ry)+mst:nnc+mst*Math.max(0,1-.8*nnc))}
   const Ncomp=Math.max(0,-Math.min(...Ns)),Nt=Math.max(0,Math.max(...Ns)),Mmax=Math.max(...Ms),ur=Math.max(...URs);
-  const M2a=fe[11]+fe[7]*L+q2*L*L/2,M3a=-fe[10]+fe[8]*L+q3*L*L/2;
-  const d2=5*q2*L**4/(384*e.E*p.Iy)+(fe[4]+M2a)*L*L/(16*e.E*p.Iy);
-  const d3=5*q3*L**4/(384*e.E*p.Ix)+(fe[10]+M3a)*L*L/(16*e.E*p.Ix);
+  /* Прогиб в пролёте: точное решение балки (Эрмит + частное для равномерной
+     нагрузки) относительно хорды между смещёнными концами; ul — локальные
+     перемещения/повороты концов ФЭ-части. */
+  const d2=(L/8)*(ul[5]-ul[11])+q2*L**4/(384*e.E*e.I3);
+  const d3=-(L/8)*(ul[4]-ul[10])+q3*L**4/(384*e.E*e.I2);
   const e1v=e.R[0];
   const um=[0,1,2].map(d=>(u[e.ia*6+d]+u[e.ib*6+d])/2);
   const along=um[0]*e1v.x+um[1]*e1v.y+um[2]*e1v.z;
   const nodalD=Math.hypot(um[0]-along*e1v.x,um[1]-along*e1v.y,um[2]-along*e1v.z);
   const defl=Math.hypot(d2,d3)+nodalD;
+  const seg={t0:e.r.t0==null?0:e.r.t0,t1:e.r.t1==null?1:e.r.t1,L,d2,d3,q2,q3,E:e.E,I2:e.I2,I3:e.I3,
+    vA:ul[1],rA3:ul[5],vB:ul[7],rB3:ul[11],wA:ul[2],rA2:ul[4],wB:ul[8],rB2:ul[10],uA1:ul[0],uB1:ul[6]};
   res.push({id:e.r.id,name:e.r.name,secName:e.secName,matName:e.matName,secId:e.sec.id,L,
-   Ncomp,Nt,Mmax,ur,defl,d2:+d2.toFixed(3),d3:+d3.toFixed(3),nodalD:+nodalD.toFixed(3),Ns,Ms,URs,t0:e.r.t0==null?0:e.r.t0,t1:e.r.t1==null?1:e.r.t1});
+   Ncomp,Nt,Mmax,ur,defl,d2:+d2.toFixed(3),d3:+d3.toFixed(3),nodalD:+nodalD.toFixed(3),Ns,Ms,URs,t0:e.r.t0==null?0:e.r.t0,t1:e.r.t1==null?1:e.r.t1,seg});
   if(ur>maxUR){maxUR=ur;urRod=e.r.name}
   if(defl>maxD){maxD=defl;dRod=e.r.name}
   mass+=e.p.mass*L/1000;cost+=(e.sec.price_rub_m||0)*L/1000;
@@ -261,9 +274,9 @@ function solveFrame(){
  res.forEach(rr=>{const k=String(rr.id).split('#')[0];
   const sm=rr.Ns.map((N,i)=>[rr.t0+(rr.t1-rr.t0)*i/8,N,rr.Ms[i],rr.URs[i]]);
   let a=agg.get(k);
-  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||M.rods.get(Number(k))||{}).name||rr.name,segs:[{t0:rr.t0,t1:rr.t1,L:rr.L,d2:rr.d2,d3:rr.d3}]},sm};agg.set(k,a)}
+  if(!a){a={row:{...rr,id:k,name:(M.rods.get(k)||M.rods.get(Number(k))||{}).name||rr.name,segs:[rr.seg]},sm};agg.set(k,a)}
   else{a.sm.push(...sm);const p0=a.row;
-   (p0.segs=p0.segs||[]).push({t0:rr.t0,t1:rr.t1,L:rr.L,d2:rr.d2,d3:rr.d3});
+   (p0.segs=p0.segs||[]).push(rr.seg);
    if(rr.defl>p0.defl)p0.defl=rr.defl;
    if(rr.Ncomp>p0.Ncomp)p0.Ncomp=rr.Ncomp;
    if(rr.Nt>p0.Nt)p0.Nt=rr.Nt;
@@ -281,8 +294,28 @@ function solveFrame(){
   r0.Ns=[];r0.Ms=[];r0.URs=[];
   for(let i=0;i<=8;i++){const s=at(i/8);r0.Ns.push(s[1]);r0.Ms.push(s[2]);r0.URs.push(s[3])}
   r0.ur=Math.max(...a.sm.map(s=>s[3]));r0.Mmax=Math.max(...a.sm.map(s=>s[2]));
-  const rr=M.rods.get(k);if(rr)r0.L=rodLen(rr);
-  res.push(r0)});
+  const rr=M.rods.get(k)||M.rods.get(Number(k));if(rr)r0.L=rodLen(rr);
+  /* Прогиб стержня по ВСЕЙ его оси: максимум отклонения от хорды между концами
+      стержня (не кусками) — иначе host-разбиение занижает f (тест инвариантности разбиения). */
+   const rod=rr;
+   if(rod){const A=M.nodes.get(rod.a),B=M.nodes.get(rod.b),ia=idx.get(rod.a),ib=idx.get(rod.b);
+    if(A&&B&&ia!=null&&ib!=null){
+     const uA=[u[ia*6],u[ia*6+1],u[ia*6+2]],uB=[u[ib*6],u[ib*6+1],u[ib*6+2]];
+     const e1=B.p.clone().sub(A.p),Lr=e1.length();
+     if(Lr>1){e1.multiplyScalar(1/Lr);
+      let e2=AZ.clone().cross(e1);if(e2.lengthSq()<1e-8)e2=AY.clone().cross(e1);
+      e2.normalize();const e3=e1.clone().cross(e2).normalize();
+      let md=0;
+      (r0.segs||[]).forEach(sg=>{if(!sg||sg.E==null||!(sg.L>0))return;
+       for(let i=0;i<=8;i++){const t=i/8,Tg=sg.t0+(sg.t1-sg.t0)*t,f=deflAt(sg,sg.L,t);
+        const cx=e1.x*f.u+e2.x*f.v+e3.x*f.w-(uA[0]+(uB[0]-uA[0])*Tg),
+              cy=e1.y*f.u+e2.y*f.v+e3.y*f.w-(uA[1]+(uB[1]-uA[1])*Tg),
+              cz=e1.z*f.u+e2.z*f.v+e3.z*f.w-(uA[2]+(uB[2]-uA[2])*Tg);
+        const al=cx*e1.x+cy*e1.y+cz*e1.z;
+        const d=Math.hypot(cx-al*e1.x,cy-al*e1.y,cz-al*e1.z);
+        if(d>md)md=d}});
+      if(md>0)r0.defl=md}}}
+   res.push(r0)});
  maxUR=0;urRod='-';maxD=0;dRod='-';
  res.forEach(rr=>{if(rr.ur>maxUR){maxUR=rr.ur;urRod=rr.name}if(rr.defl>maxD){maxD=rr.defl;dRod=rr.name}});
  const reactArr=[...react.entries()].map(([id,v])=>({id,
@@ -293,7 +326,37 @@ function solveFrame(){
 function calcGroup(){if(!window._gCalc){window._gCalc=new THREE.Group();scene.add(window._gCalc)}return window._gCalc}
 function nodeMatHeat(col){return matFor('nhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
 function rodMatHeat(col){return matFor('rhx:'+col.getHexString(),'#'+col.getHexString(),'base')}
-function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=calc._rodCol=null;if(typeof rodObjs!=='undefined')rodObjs.forEach((o,id)=>{o.g.visible=!M.hidden.has('r'+id)});if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
+/* узлы в деформированной схеме движутся вместе с конструкцией (сварные узлы) */
+function applyDeflNodePos(){
+  if(typeof nodeObjs==='undefined')return;
+  const on=calc.showDefl&&calc.res&&mode!=='plan';
+  const s=calc.deflScale;
+  M.nodes.forEach(n=>{const o=nodeObjs.get(n.id);if(!o)return;
+   if(!on){o.g.position.copy(n.p);return}
+   const i=calc.res.nodeOrder?calc.res.nodeOrder.indexOf(n.id):-1;
+   if(i<0){o.g.position.copy(n.p);return}
+   o.g.position.set(n.p.x+calc.res.u[i*6]*s,n.p.y+calc.res.u[i*6+1]*s,n.p.z+calc.res.u[i*6+2]*s)});
+}
+/* Точная форма деформированного стержня: Эрмит по концевым локальным перемещениям/поворотам
+   (ul ФЭ-части) + частное решение равномерной нагрузки q·x²(L−x)²/(24EI).
+   θv = dv/dx = φ3 (поворот вокруг e3), θw = dw/dx = −φ2 (поворот вокруг e2).
+   Возвращает локальные: v (по e2), w (по e3), наклоны tv/tw, осевое u — без масштаба. */
+function deflAt(sg,L,t){
+ const x=L*t,x2=x*x,Lm=L-x,f=x2*Lm*Lm,fp=2*L*L*x-6*L*x2+4*x*x2;
+ const H1=1-3*t*t+2*t*t*t,H2=t-2*t*t+t*t*t,H3=3*t*t-2*t*t*t,H4=-t*t+t*t*t;
+ const dH1=(-6*t+6*t*t)/L,dH2=1-4*t+3*t*t,dH3=(6*t-6*t*t)/L,dH4=-2*t+3*t*t;
+ const c2=sg.q2*f/(24*sg.E*sg.I3),c3=sg.q3*f/(24*sg.E*sg.I2);
+ const c2p=sg.q2*fp/(24*sg.E*sg.I3),c3p=sg.q3*fp/(24*sg.E*sg.I2);
+ const v=H1*sg.vA+L*H2*sg.rA3+H3*sg.vB+L*H4*sg.rB3+c2;
+ const w=H1*sg.wA-L*H2*sg.rA2+H3*sg.wB-L*H4*sg.rB2+c3;
+ /* tv/tw = dv/dx, dw/dx: dH1/dH3 уже /L (по x), dH2/dH4 — по t, но член L*H2
+      даёт при дифференцировании по x ровно dH2 (L сокращается с dt/dx=1/L) */
+ const tv=dH1*sg.vA+dH2*sg.rA3+dH3*sg.vB+dH4*sg.rB3+c2p;
+   const tw=dH1*sg.wA-dH2*sg.rA2+dH3*sg.wB-dH4*sg.rB2+c3p;
+ const u=sg.uA1+(sg.uB1-sg.uA1)*t;
+ return{v,w,tv,tw,u};
+}
+function clearCalcDraw(){clearGroup(calcGroup());calc._nodeCol=calc._rodCol=null;if(typeof rodObjs!=='undefined')rodObjs.forEach((o,id)=>{o.g.visible=!M.hidden.has('r'+id)});applyDeflNodePos();if(window.applySelMats)applySelMats();const l=$('#calcLegend');if(l)l.style.display='none'}
 function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
  const g=calcGroup(),show=calc.show;
  /* деформированная схема выключает обычный каркас (стержни модели) в 3D */
@@ -369,14 +432,18 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
    for(let k=0;k<seqN.length-1;k++){
     const nA=seqN[k],nB=seqN[k+1];const vp=nB.p.clone().sub(nA.p);const Lp=vp.length();if(Lp<10)continue;
     const e1p=vp.clone().multiplyScalar(1/Lp);
-    let e2p=AZ.clone().cross(e1p);if(e2p.lengthSq()<1e-8)e2p=AX.clone().cross(e1p);
+    let e2p=AZ.clone().cross(e1p);if(e2p.lengthSq()<1e-8)e2p=AY.clone().cross(e1p);
     e2p.normalize();const e3p=e1p.clone().cross(e2p).normalize();
     const sg=segs?segs[k]:{d2:rr.defl,d3:0};
-    const bDot=(sg.d2||0)*e2p.dot(perp)+(sg.d3||0)*e3p.dot(perp);
+    const full=!!(sg&&sg.E!=null&&sg.L>0);          /* точная форма по коэффициентам seg */
+    const e2d=e2p.dot(perp),e3d=e3p.dot(perp);
+    const bDot=full?0:(sg.d2||0)*e2d+(sg.d3||0)*e3d;
     const dA=dP(nA.id),dB=dP(nB.id);
     const Np=Math.max(4,Math.round(20*Lp/L));
     for(let i=(k?1:0);i<=Np;i++){const t=i/Np;
-     const off=(dA+(dB-dA)*t)+bDot*Math.sin(Math.PI*t)*s2;
+     /* вся эпюра (узлы + местный изгиб) в одном масштабе deflScale */
+     const off=full?s2*(f=>f.v*e2d+f.w*e3d)(deflAt(sg,sg.L,t))
+       :((dA+(dB-dA)*t)+bDot*Math.sin(Math.PI*t))*s2;
      pts.push(nA.p.clone().addScaledVector(e1p,Lp*t).addScaledVector(perp,off))}}
    if(pts.length<2)return;
    gPlan.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat))});
@@ -388,6 +455,7 @@ function drawCalc(){clearCalcDraw();const R=calc.res;if(!R)return;
    calc.deflScale=md>1e-6?Math.round(clamp(dim*0.06/md,1,300)):1;
    const rg=$('#rngDefl'),dv=$('#dScaleVal');if(rg){rg.value=calc.deflScale}if(dv)dv.textContent=calc.deflScale}
   deflBodies(g)}
+  applyDeflNodePos();   /* узлы следуют за деформированной конструкцией (сварные) */
  const lg=$('#calcLegend');if(!lg)return;lg.style.display='flex';
  const fmtV=v=>show==='n'?(v/1000).toFixed(1)+' кН':show==='m'?v.toFixed(0)+' кН·м':show==='defl'?v.toFixed(1)+' мм':v.toFixed(2);
  const lbl={ur:'UR — использование',n:'N: сжатие (тёплый) / растяжение (синий)',m:'M изгибающий, кН·м',defl:'Прогиб, мм'}[show];
