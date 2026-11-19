@@ -769,30 +769,105 @@ function cutN(u){const l=Math.hypot(u[0],u[1],u[2]);return l>1e-9?[u[0]/l,u[1]/l
      плоскости реза (для будущих SVG-чертежей); weld — рисовать сварной
      контур на этом торце (чужой соосный стык встык); groupKey — ключ
      группировки одинаковых деталей. */
+/* УЗЕЛ-ОПОРА: плоский торец остаётся только у члена, который меньше других
+   «вгрызается» в соседей (на фундаменте он сидит плоско); остальные отодвигаются
+   от узла ровно настолько, чтобы их сечение ЦЕЛИКОМ вышло из нераскрытого
+   (не запиленного) тела соседа. Раньше здесь безусловно возвращался flat, и
+   диагональ у основания стойки уходила внутрь её стены — тела пересекались. */
+function supportCut(v,sec,inc,L){
+ const flat={kind:'flat',txt:'без запила — опора',e:0,groupKey:'flat'};
+ if(!inc.length)return flat;
+ const hw=s=>s&&s.kind==='rhs'?[(s.h_mm||60)/2,(s.b_mm||60)/2]:[(s.b_mm||60)/2,(s.h_mm||60)/2];
+ const area=s=>(s&&s.b_mm||60)*(s&&s.h_mm||60);
+ const ax=d=>{const m2=cutN([-d[1],d[0],0])||[1,0,0];
+  return[m2,cutN([d[1]*m2[2]-d[2]*m2[1],d[2]*m2[0]-d[0]*m2[2],d[0]*m2[1]-d[1]*m2[0]])||[0,0,0]]};
+ /* наименьший параметр t (от узла вдоль оси vs), начиная с которого сечение
+    vs целиком лежит вне призмы соседа q (призма q — нераскрытая, от узла):
+    выходим через одно из двух «лиц» сечения соседа либо через его задний
+    торец, если наша ось смотрит назад от него */
+ const clearOf=(vs,ss,q)=>{
+  const[hw2,hw3]=hw(ss||{});
+  let e2=cutN([-vs[1],vs[0],0])||[1,0,0];
+  const e3=cutN([vs[1]*e2[2]-vs[2]*e2[1],vs[2]*e2[0]-vs[0]*e2[2],vs[0]*e2[1]-vs[1]*e2[0]])||[0,0,0];
+  const[m2,m3]=ax(q.d),[Wq,Hq]=hw(q.sec);
+  let best=Infinity;
+  const face=(mm,half)=>{
+   const vm=vs[0]*mm[0]+vs[1]*mm[1]+vs[2]*mm[2];
+   if(Math.abs(vm)<1e-6)return;
+   const c=hw2*Math.abs(e2[0]*mm[0]+e2[1]*mm[1]+e2[2]*mm[2])+
+    hw3*Math.abs(e3[0]*mm[0]+e3[1]*mm[1]+e3[2]*mm[2]);
+   const t=(half+c)/Math.abs(vm);
+   if(t<best)best=t};
+  face(m2,Wq);face(m3,Hq);
+  const vd=vs[0]*q.d[0]+vs[1]*q.d[1]+vs[2]*q.d[2];
+  if(vd<-1e-6){const c=hw2*Math.abs(e2[0]*q.d[0]+e2[1]*q.d[1]+e2[2]*q.d[2])+
+    hw3*Math.abs(e3[0]*q.d[0]+e3[1]*q.d[1]+e3[2]*q.d[2]);
+   const t=c/(-vd);if(t<best)best=t}
+  return best};
+ const all=[{d:v,sec:sec||{}}].concat(inc);
+ const clr=all.map((a,i)=>{let m=0;
+  for(let j=0;j<all.length;j++){if(j===i)continue;
+   const t=clearOf(a.d,a.sec,all[j]);if(isFinite(t)&&t>m)m=t}
+  return m});
+ /* «опорный» = меньший вынос (меньше влез в соседей), при равенстве — более
+    массивное сечение; он остаётся плоским, остальные отступают на свой вынос */
+ let bi=0;
+ for(let i=1;i<all.length;i++){
+  if(clr[i]<clr[bi]-1e-9)bi=i;
+  else if(Math.abs(clr[i]-clr[bi])<=1e-9&&area(all[i].sec)>area(all[bi].sec))bi=i}
+ if(bi===0)return flat;
+ const planes=[];
+ for(const q of inc){const nn=cutN([v[0]-q.d[0],v[1]-q.d[1],v[2]-q.d[2]]);if(nn)planes.push(nn)}
+ let mi=0,bestC=clearOf(v,sec||{},inc[0]);
+ for(let i=1;i<inc.length;i++){const t=clearOf(v,sec||{},inc[i]);if(t>bestC){bestC=t;mi=i}}
+ const b=sec&&sec.b_mm||60,h=sec&&sec.h_mm||60;
+ const e=Math.min(clr[0],L*0.4);
+ return{kind:'T',txt:`T-подрез у опоры по ${inc[mi].name}: сечение ${b}×${h} выходит из тела соседа на ${Math.round(clr[0])} мм`,
+  e,planes,main:{name:inc[mi].name,id:inc[mi].id},groupKey:'T'}}
 function cutCore(P){
  const v=P.v;
  if(!v)return{kind:'free',txt:'—',e:0,groupKey:'free'};
- if(P.isSupport)return{kind:'flat',txt:'без запила — опора',e:0,groupKey:'flat'};
- const inc=P.inc||[];
+ /* свои сегменты (стержень разбит host-узлом и подходит к узлу с двух сторон)
+    не участвуют в запиле: иначе собственное продолжение даёт ложный pass
+    (ang(v,−v)=180°) и запил у стыка не строится */
+ const inc=(P.inc||[]).filter(q=>q.id!==P.selfId);
+ if(P.isSupport)return supportCut(v,P.sec,inc,P.L);
  if(!inc.length)return{kind:'free',txt:'без запила (свободный край)',e:0,groupKey:'free'};
  const ang=(u,w)=>Math.acos(clamp(u[0]*w[0]+u[1]*w[1]+u[2]*w[2],-1,1))*CUTD;
+ /* биссектрисы со ВСЕМИ соседями узла: конец режется ВСЕМИ плоскостями, а
+    не только против выбранного «ближайшего» соседа. Раньше у каждого конца
+    была одна плоскость против одного соседа, а соседи выбирали РАЗНЫХ
+    партнёров (узел 1205: КЛ-2 резал против НП-20, а сам НП-20 — против
+    ОР-24) — плоскости расходились и тела пересекались. Взаимно применённая
+    биссектриса пары (нормали ±n) строго разводит тела полупространствами. */
+ const planes=[];
+ for(const q of inc){const nn=cutN([v[0]-q.d[0],v[1]-q.d[1],v[2]-q.d[2]]);if(nn)planes.push(nn)}
  const s=P.sec||{},b=s.b_mm||60,h=s.h_mm||60,L=P.L||0;
  let e2=cutN([-v[1],v[0],0]);if(!e2)e2=[1,0,0];
  const e3=cutN([v[1]*e2[2]-v[2]*e2[1],v[2]*e2[0]-v[0]*e2[2],v[0]*e2[1]-v[1]*e2[0]])||[0,0,0];
  /* проходной: соосное продолжение за концом — торец встык, без запила.
     Своё продолжение (сегменты того же стержня) — кольцо рисует отдельный
     проход butt-швов; чужой соосный — кольцо здесь (weld). */
- for(const q of inc)if(ang(v,q.d)>165)return{kind:'pass',txt:'без запила (проходной)',e:0,
-  weld:q.id!==P.selfId,groupKey:'pass'};
+ for(const q of inc)if(ang(v,q.d)>175)return{kind:'pass',txt:'без запила (проходной)',e:0,
+  weld:q.id!==P.selfId,planes,groupKey:'pass'};
  /* сквозной стык: две ветви в узле образуют прямую (>155°) */
- let pair=null;
- for(let i=0;i<inc.length&&!pair;i++)for(let j=i+1;j<inc.length;j++)
-  if(ang(inc[i].d,inc[j].d)>155){pair=[inc[i],inc[j]];break}
+ /* выбор пары — не первая попавшаяся: берём пару с членом, ближайшим к
+    нашей оси v (с ним наш конец сближается сильнее всего — его стенки
+    режут наш торец), при равенстве — самую прямую. На узле 1141 это
+    даёт [НП-8,НП-9] (14°), а не вертикаль [КЛ-3,СТ-16] (76°). */
+ let pair=null,bestNear=Infinity,bestStr=-1;
+ for(let i=0;i<inc.length;i++)for(let j=i+1;j<inc.length;j++){
+  const ab=ang(inc[i].d,inc[j].d);if(ab<=155)continue;
+  const near=Math.min(ang(v,inc[i].d),ang(v,inc[j].d));
+  if(near<bestNear||(near===bestNear&&ab>bestStr)){pair=[inc[i],inc[j]];bestNear=near;bestStr=ab}}
  if(pair){
-  if(pair.some(q=>ang(v,q.d)>155)){const br=inc.filter(q=>pair.indexOf(q)<0);
+  /* мы — часть сквозной линии, только если нет почти-параллельного соседа
+    (<30°, та же сторона узла — перекрытие тел, конец обязан резаться);
+    узел 1141: Р-18↔НП-9 = 166°, но Р-18↔НП-8 = 14° — режем, а не main */
+   if(Math.min.apply(null,inc.map(q=>ang(v,q.d)))>30&&pair.some(q=>ang(v,q.d)>155)){const br=inc.filter(q=>pair.indexOf(q)<0);
    const mj=pair.find(q=>ang(v,q.d)>155);
    return{kind:'main',txt:br.length?`без запила (основной; ветвь ${br.map(q=>q.name).join(', ')})`:'без запила (проходной)',
-    e:0,main:{name:mj.name,id:mj.id},groupKey:'main'}}
+    e:0,planes,main:{name:mj.name,id:mj.id},groupKey:'main'}}
   /* ветвь к сквозному основному: main — по массе погонного сечения.
      Короб main в плоскости сечения (m2 — горизонталь, m3 — сторона 'b' у rhs
      по конвенции вертикали); луч v через короб: sOut — наружная стенка,
@@ -811,24 +886,23 @@ function cutCore(P){
   const nest=Math.min(b,h)<=Math.min(Wm-2*tA,Hm-2*tA)+.5&&Math.max(b,h)<=Math.max(Wm-2*tA,Hm-2*tA)+.5;
   const e=Math.min(nest?sFar:sOut,L*0.4),mj={name:main.name,id:main.id};
   return nest?{kind:'nest',txt:`вложено в осн. ${main.name}: сечение ${b}×${h} в полость ${Wm-2*tA}×${Hm-2*tA}, глубина ${Math.round(sFar)} мм`,
-    e,nest,sOut:Math.min(sOut,L*0.4),sFar,al:ang(v,main.d),main:mj,groupKey:'nest'}
+    e,planes,nest,sOut:Math.min(sOut,L*0.4),sFar,al:ang(v,main.d),main:mj,groupKey:'nest'}
    :{kind:'T',txt:`T-подрез по осн. ${main.name}: ${b}×${h} не входит в полость ${Wm-2*tA}×${Hm-2*tA} — впритык к стенке`,
-    e,nest,sOut:Math.min(sOut,L*0.4),sFar,al:ang(v,main.d),main:mj,groupKey:'T'}}
+    e,planes,nest,sOut:Math.min(sOut,L*0.4),sFar,al:ang(v,main.d),main:mj,groupKey:'T'}}
  /* угловой стык (miter): плоскость реза по биссектрисе */
  const m=inc.reduce((a,q)=>ang(v,q.d)<ang(v,a.d)?q:a,inc[0]);
  /* биссектриса: нормаль плоскости запила = v − m.d (разделяет стержни),
     НЕ v + m.d (та плоскость не разделяет — на коньке давала вынос 86.6 вместо 28.9) */
  const al=ang(v,m.d),n=cutN([v[0]-m.d[0],v[1]-m.d[1],v[2]-m.d[2]]);
- if(!n)return{kind:'free',txt:'без запила',e:0,groupKey:'free'};
+ if(!n)return{kind:'free',planes,txt:'без запила',e:0,groupKey:'free'};
  const c2=Math.max(.08,Math.abs(GVEC.dot(n,v)));
  const e=Math.min(((b/2)*Math.abs(GVEC.dot(n,e2))+(h/2)*Math.abs(GVEC.dot(n,e3)))/c2,L*0.4),th=90-al/2;
  return{kind:'miter',txt:`запил ${Math.abs(al-90)<1?'90°→45°':Math.round(al)+'°→'+th.toFixed(0)+'°'} (${m.name})`,
-  e,angle:th,al,n,e2,e3,main:{name:m.name,id:m.id},groupKey:`miter${Math.round(th)}`}}
+  e,planes,angle:th,al,n,e2,e3,main:{name:m.name,id:m.id},groupKey:`miter${Math.round(th)}`}}
 /* обёртка: узлы модели → inc[] → ядро (только {txt,e} и ниже по цепочке) */
 function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?r.b:r.a);
  if(!nA||!nB)return{txt:'—',e:0};
  const v=cutN(cutV(nA.p,nB.p));if(!v)return{txt:'—',e:0};
- if(nA.type==='support')return cutCore({v,isSupport:true});
  const inc=[];
  M.rods.forEach(o=>{if(o.id===r.id)return;let oe=null;
   if(o.a===nA.id)oe=M.nodes.get(o.b);else if(o.b===nA.id)oe=M.nodes.get(o.a);
@@ -837,7 +911,8 @@ function cutEndData(r,atA){const nA=M.nodes.get(atA?r.a:r.b),nB=M.nodes.get(atA?
   if(thru){const oa=M.nodes.get(o.a),ob=M.nodes.get(o.b);if(!oa||!ob)return;
    const d=cutN(cutV(ob.p,oa.p));if(d){inc.push({name:o.name,id:o.id,d,sec:rodSec(o)});
     inc.push({name:o.name,id:o.id,d:[-d[0],-d[1],-d[2]],sec:rodSec(o)})}}});
- return cutCore({v,L:Math.hypot(...cutV(nA.p,nB.p)),sec:rodSec(r),selfId:r.id,inc})}
+ return cutCore({v,L:Math.hypot(...cutV(nA.p,nB.p)),sec:rodSec(r),selfId:r.id,inc,
+  isSupport:nA.type==='support'})}
 /* вклад конца в длину заготовки: у miter вынос (запил по биссектрисе) — край
    заготовки выходит ЗА узел на e (остриё запила), поэтому +e; у T/nest конец
    НЕ доходит до оси на e (впритык к стенке / вложение в полость — ровно то,
@@ -957,6 +1032,10 @@ function assemblyPlan(force){
   for(const nid of [B.a,B.b]){const n=M.nodes.get(nid);if(!n)continue;
    if(n.host&&n.host.rod===A.id)return true;
    if((n.hosts||[]).some(h=>h&&h.rod===A.id))return true}
+  /* узел, посаженный на ОБЕ оси (инструмент X / авто-фикс) — легитимный стык:
+     пересечение осей в этом узле не коллизия тел */
+  for(const n of M.nodes.values()){const hs=n.hosts||[];
+   if(hs.some(h=>h&&h.rod===A.id)&&hs.some(h=>h&&h.rod===B.id))return true}
   return false};
  const secRad=r=>{const s=rodSec(r);return s};
  for(let i=0;i<rods.length;i++)for(let j=i+1;j<rods.length;j++){
@@ -1047,6 +1126,101 @@ function assemblyPlan(force){
  const plan={stages,issues,sig};
  calc.plan=plan;calc.planSig=sig;
  return plan}
+/* Блок проверок сборки (общий для модалки раскроя и модалки отчёта):
+   ошибки — всегда, предупреждения — свёрнутым <details> (FABRICATION §4.7). */
+function apIssuesHTML(){
+ const AP=(typeof assemblyPlan==='function')?assemblyPlan():{issues:[]};
+ const aErrs=AP.issues.filter(is=>is.sev==='err'),aWarns=AP.issues.filter(is=>is.sev!=='err');
+ const ACODE={float:'висит в воздухе',collide:'коллизии тел',tight:'вплотную',
+  angle:'угол раскоса вне 30–60° (EC3/CIDECT)',dbl:'двойной индивидуальный запил',
+  nodefit:'тела в узле не запилены друг к другу'};
+ if(!AP.issues.length)return`<div class="hint2" style="border-left:3px solid #7fe8b8;padding:4px 8px;margin:4px 0">Проверки сборки: <b style="color:#7fe8b8">ошибок нет ✓</b></div>`;
+ return`<div class="hint2" style="border-left:3px solid ${aErrs.length?'#ff5470':'#ffb020'};padding:4px 8px;margin:4px 0">
+ <b>Проверки сборки: ${aErrs.length} ошиб. • ${aWarns.length} предупр.</b>
+ ${aErrs.map(is=>`<div style="color:#ff5470">✖ ${esc(is.txt)}</div>`).join('')}
+ <details style="margin-top:2px"><summary style="cursor:pointer">⚠ Показать предупреждения (${aWarns.length})</summary>
+ ${aWarns.map(is=>`<div>⚠ [${esc(ACODE[is.code]||is.code)}] ${esc(is.txt)}</div>`).join('')}
+ </details></div>`}
+/* ---------- авто-решение ошибок конструкции (галочка в модалке отчёта) ----------
+   Исправляется автоматически (по образцу инструмента «X», 30-xnodes):
+     collide — посадка узла на пересечении осей (mid) либо конца стержня на ось
+               соседа — в пределах HOST_TOL;
+     float   — посадка «висящего» конца на ближайший стержень того же или более
+               раннего этапа — в пределах HOST_TOL.
+   Нерешаемое (углы 30–60, «вплотную», расчёт без опоры, посадки вне допуска)
+   остаётся и показывается диалогом autoFixFlow. После правок проверки и расчёт
+   пересчитываются принудительно: хосты не входят в planSig/jointsSig. */
+function autoFixConstruction(){
+ const errs0=assemblyPlan(true).issues.filter(i=>i.sev==='err');
+ if(!errs0.length)return{nFixed:0,remaining:[],actions:'ничего не требовалось',changed:false};
+ const rods=[...M.rods.values()];
+ const byName=new Map(rods.map(r=>[r.name,r]));
+ const TOL=HOST_TOL();
+ let created=0,hosted=0,undoPushed=false;
+ const push1=()=>{if(!undoPushed){pushUndo();undoPushed=true}};
+ const fixCollide=(A,B)=>{
+  const a1=M.nodes.get(A.a),a2=M.nodes.get(A.b),b1=M.nodes.get(B.a),b2=M.nodes.get(B.b);
+  if(!a1||!a2||!b1||!b2)return false;
+  const s=segClosest(a1.p,a2.p,b1.p,b2.p);if(!s)return false;
+  const mid=s.t>.02&&s.t<.98&&s.u>.02&&s.u<.98;
+  if(mid){
+   if(s.dd/2>TOL)return false; /* узел не сел бы на оси (допуск HOST_TOL) */
+   const p=s.pa.clone().add(s.pb).multiplyScalar(.5);
+   let n=findNodeAt(p,TOL*.6);
+   push1();
+   if(!n){n={id:uid(),p:p.clone(),type:'node',name:'Узел-'+(++M.counters.n),hosts:[],host:null};
+    M.nodes.set(n.id,n);bornIds.add(n.id);created++}
+   if(hostNodeOn(n,A))hosted++;
+   if(hostNodeOn(n,B))hosted++;
+   attachNodeToRods(n);return true}
+  if(s.t<.02||s.t>.98){const nE=s.t<.02?a1:a2;
+   if(nE.type!=='support'&&hostNodeOn(nE,B)){push1();hosted++;attachNodeToRods(nE);return true}}
+  if(s.u<.02||s.u>.98){const nE=s.u<.02?b1:b2;
+   if(nE.type!=='support'&&hostNodeOn(nE,A)){push1();hosted++;attachNodeToRods(nE);return true}}
+  return false};
+ const fixFloat=R=>{
+  const st=stageOf(R);let ok=false;
+  for(const nid of[R.a,R.b]){
+   const n=M.nodes.get(nid);if(!n||n.type==='support')continue;
+   let best=null,bd=Infinity;
+   for(const O of rods){if(O.id===R.id||stageOf(O)>st)continue;
+    const oa=M.nodes.get(O.a),ob=M.nodes.get(O.b);if(!oa||!ob)continue;
+    const s=segClosest(n.p,n.p,oa.p,ob.p);if(!s)continue;
+    if(s.dd<bd){bd=s.dd;best=O}}
+   if(best&&bd<=TOL&&hostNodeOn(n,best)){push1();hosted++;attachNodeToRods(n);ok=true}}
+  return ok};
+ errs0.forEach(is=>{
+  if(is.code==='collide'&&is.rods.length>=2){
+   const A=byName.get(is.rods[0]),B=byName.get(is.rods[1]);
+   if(A&&B)fixCollide(A,B)}
+  else if(is.code==='float'&&is.rods.length){
+   const R=byName.get(is.rods[0]);if(R)fixFloat(R)}});
+ const changed=undoPushed;
+ if(changed){afterChange();nodeJoints(true);runCalc()}
+ const errs1=assemblyPlan(true).issues.filter(i=>i.sev==='err');
+ return{nFixed:Math.max(0,errs0.length-errs1.length),remaining:errs1,
+  actions:'создано узлов '+created+', посадок '+hosted,changed}}
+/* Оболочка авто-исправления: применяет fix; если ошибки остались — диалог с
+   выбором «Продолжить с ошибками» / «Отменить исправления». Возвращает true,
+   если диалог показан: модалка отчёта открывается заново колбэком onAfter. */
+function autoFixFlow(onAfter){
+ let res;
+ try{res=autoFixConstruction()}
+ catch(e){console.error('autoFix',e);toast('Авто-исправление не выполнено: '+(e&&e.message||e),{type:'err'});return false}
+ if(!res.remaining.length){
+  toast(res.nFixed?'Авто-исправление ('+res.actions+'): ошибок больше нет':'Ошибок конструкции нет — исправлять нечего',
+   {type:'ok',timeout:4500});
+  return false}
+ const acts=[{label:'Продолжить с ошибками',primary:true,keep:true,
+  fn:()=>{closeModal();onAfter&&onAfter()}}];
+ if(res.changed)acts.unshift({label:'Отменить исправления',warn:true,keep:true,
+  fn:()=>{undo();nodeJoints(true);runCalc();closeModal();onAfter&&onAfter()}});
+ const list=res.remaining.slice(0,8).map(is=>`<div style="color:#ff5470">✖ ${esc(is.txt)}</div>`).join('')
+  +(res.remaining.length>8?`<div class="hint2">… и ещё ${res.remaining.length-8}</div>`:'');
+ openModal('Авто-решение ошибок — не всё исправлено',
+  `<div class="hint2">Исправлено: <b>${res.nFixed}</b> из ${res.nFixed+res.remaining.length} (${esc(res.actions)}). Осталось (${res.remaining.length}):</div>${list}
+   <div class="hint2">Можно продолжить составление отчёта — эти ошибки останутся в проверках, либо отменить исправления (вернётся исходная модель). Крестиком — закрыть, исправления останутся.</div>`,acts);
+ return true}
 /* Единый группировщик раскроя (шаг 5, FABRICATION §4.5): одинаковые детали
    внутри сечения (ключ: Ls, запил A, запил B) → позиции Д-n со сквозной
    нумерацией. Одна логика для модалки (openCutModal) и отчёта (31-report:
@@ -1082,25 +1256,13 @@ const rows=grs.map(g2=>{
  return`<tr class="grp"><td colspan="8"><b>${esc(g2.sec.name)}</b> — ${g2.groups.length} поз. / ${g2.items.length} дет. • ${g2.nStock} штаб × ${g2.sec.sell_len_m||12} м • утил. ${(g2.util*100).toFixed(0)}% • ${g2.mass.toFixed(0)} кг • ${Math.round(g2.cost).toLocaleString('ru')} ₽</td></tr>`+posRows}).join('');
 const mass=grs.reduce((s,g2)=>s+g2.mass,0),cost=grs.reduce((s,g2)=>s+g2.cost,0),
  totL=grs.reduce((s,g2)=>s+g2.total,0),stockL=grs.reduce((s,g2)=>s+g2.nStock*Math.round((g2.sec.sell_len_m||12)*1000),0);
-/* Шаг 4 (docs/FABRICATION.md §4.7): предупреждения проверок сборки — в начало модалки.
-   Ошибки (коллизии, «висит в воздухе») показываем всегда, предупреждения — свёрнутым
-   списком <details>, чтобы не забивать таблицу раскроя. */
+/* Шаг 4 (docs/FABRICATION.md §4.7): предупреждения проверок сборки — в начало
+   модалки; общий блок apIssuesHTML (тот же, что в модалке отчёта). */
 const AP=(typeof assemblyPlan==='function')?assemblyPlan():{issues:[]};
-const aErrs=AP.issues.filter(is=>is.sev==='err'),aWarns=AP.issues.filter(is=>is.sev!=='err');
-const ACODE={float:'висит в воздухе',collide:'коллизии тел',tight:'вплотную',
- angle:'угол раскоса вне 30–60° (EC3/CIDECT)',dbl:'двойной индивидуальный запил',
- nodefit:'тела в узле не запилены друг к другу'};
-const warnBlock=AP.issues.length?
-`<div class="hint2" style="border-left:3px solid ${aErrs.length?'#ff5470':'#ffb020'};padding:4px 8px;margin:4px 0">
- <b>Проверки сборки: ${aErrs.length} ошиб. • ${aWarns.length} предупр.</b>
- ${aErrs.map(is=>`<div style="color:#ff5470">✖ ${esc(is.txt)}</div>`).join('')}
- <details style="margin-top:2px"><summary style="cursor:pointer">⚠ Показать предупреждения (${aWarns.length})</summary>
- ${aWarns.map(is=>`<div>⚠ [${esc(ACODE[is.code]||is.code)}] ${esc(is.txt)}</div>`).join('')}
- </details></div>`:'';
 /* сжатый план сборки в модалке (FABRICATION §4.7) — полный в HTML-отчёте */
 const planShort=AP.stages?AP.stages.map(s=>`${s.n}. ${s.txt.split(':')[0]} (${s.rods.length})`).join(' → '):'';
 openModal('РАСКРОЙ — резы и запилы по биссектрисе',
-`${warnBlock}${planShort?`<div class="hint2"><b>План сборки:</b> ${planShort}</div>`:''}<div class="hint2">Длина заготовки = длина осей + выносы запилов (у Т-подреза/вложения вынос ВЫЧИТАЕТСЯ — конец впритык к стенке либо вложен в полость и не доходит до оси на e; см. 3D-модель). Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
+`${apIssuesHTML()}${planShort?`<div class="hint2"><b>План сборки:</b> ${planShort}</div>`:''}<div class="hint2">Длина заготовки = длина осей + выносы запилов (у Т-подреза/вложения вынос ВЫЧИТАЕТСЯ — конец впритык к стенке либо вложен в полость и не доходит до оси на e; см. 3D-модель). Правила: опора — торец под 90°; проходной стык (угол &gt; 155°) — без запила; угловой стык — запил по биссектрисе: 90°→45°, угол α→θ=90°−α/2, вынос ≈ (h/2)·ctg(α/2) с проекцией по ширине стенки; T-стык — основной стержень целый, ветвь режется (подрез по коробу основного: впритык к стенке либо вложение в полость). Одинаковые детали (одно сечение, длина и оба запила) сгруппированы в одну позицию Д-n.</div>
 <div class="kv"><span>Пример расчёта</span><b style="font-size:11px">${exH}</b></div>
 <table class="calcTab wide"><tr><th>поз</th><th>кол</th><th>детали</th><th>L ось</th><th>+A</th><th>+B</th><th>L загот</th><th>запилы (A • Б)</th></tr>${rows}</table>
 <div class="kv"><span>Позиций раскроя / деталей</span><b>${nPos} / ${pl.length}</b></div>
@@ -1111,17 +1273,35 @@ openModal('РАСКРОЙ — резы и запилы по биссектрис
 [{label:'Копировать CSV',keep:true,fn:()=>navigator.clipboard.writeText(csv).then(()=>toast('CSV скопирован',{type:'ok'}))},{label:'Закрыть',fn:closeModal}]);
 $('#modalCard').classList.add('wide')}
 /* ---------- report ---------- */
-function openReportModal(){
+/* Отчёт: авто-решение ошибок (галочка в модалке, при необходимости диалог)
+   выполняется ДО открытия модалки; reportModalOpen — непосредственно модалка
+   (снимки, проверки, модель со всеми запилами для скачивания OBJ/STL).
+   skipAutoFix — рекурсивный вызов после авто-исправления, чтобы не зациклиться. */
+function openReportModal(skipAutoFix){
  if(!calc.res){toast('Сначала выполните РАСЧЁТ в режиме «Нагрузки»',{type:'warn'});setAppMode('loads');return}
  if(calc.sig!==rodSig()){runCalc();if(!calc.res)return}
+ if(!skipAutoFix&&localStorage.getItem('fc.autofix')==='1'&&
+    assemblyPlan().issues.some(i=>i.sev==='err')){
+  const dlg=autoFixFlow(()=>openReportModal(true));
+  if(!dlg)reportModalOpen();
+  return}
+ reportModalOpen()}
+function reportModalOpen(){
  const shots=(typeof captureShots==='function')?captureShots():[];
  const R=calc.res,l=calc.loads;
  const top=[...R.res].sort((a,b)=>b.ur-a.ur).slice(0,12);
+ /* модель со всеми запилами создаётся при составлении отчёта — кнопки ниже */
+ let modelParts=null;
+ if(typeof cutModelParts==='function')try{modelParts=cutModelParts()}catch(e){console.error('cutModelParts',e)}
+ const autoOn=localStorage.getItem('fc.autofix')==='1';
  openModal('ОТЧЁТ ПО КАРКАСУ',
  `<div class="hint2">«${esc($('#projName').value)}» • ${M.nodes.size} узлов / ${M.rods.size} стержней • стержневая КЭ модель (6 DOF/узел) • нагрузки СП 20.13330, проверки СП 16.13330 (упрощённая φ по λ)</div>
+ <div id="repIssues">${apIssuesHTML()}</div>
+ <label class="ck"><input type="checkbox" id="ckAutoFix" ${autoOn?'checked':''}> Авто-решение ошибок конструкции (посадка узлов на пересечениях, соединения) — при необходимости диалог</label>
  <div class="kv"><span>Нагрузки</span><b>${l.dead?'собств. вес • ':''}${l.snow?'снег р.'+l.snowRegion+' γf='+GF_SNOW[l.snowRegion]+' • ':''}${l.wind?'ветер р.'+l.windRegion+' м.'+l.terrain+' • ':''}${l.live?'эксплуат. 0.4 кПа + 1 кН • ':''}множитель ×${calc.factor}</b></div>
  <div class="kv"><span>Итог</span><b style="color:${R.maxUR>1?'#ff7a6a':'#7fe8b8'}">UR max ${R.maxUR.toFixed(2)} (${esc(R.urRod)})${R.maxUR>1?' — ПЕРЕГРУЗ':''} • прогиб max ${R.maxD.toFixed(1)} мм (${esc(R.dRod)})</b></div>
  <div class="kv"><span>Сталь / металл</span><b>${R.mass.toFixed(0)} кг • ${Math.round(R.cost).toLocaleString('ru')} ₽</b></div>
+ <div class="kv"><span>Модель со всеми запилами</span><b>${modelParts?modelParts.length+' сегм. • '+modelParts.reduce((s2,p)=>s2+p.tris.length/9,0)+' тр. • OBJ / STL ниже':'не создана (нет 32-meshexport.js)'}</b></div>
  ${shots.length?`<div class="psect">СХЕМЫ (превью)</div><div class="shotPrev">${shots.map(s=>`<figure><img src="${s.data}" alt="${esc(s.t)}"/><figcaption>${esc(s.t)}</figcaption></figure>`).join('')}</div>`:''}
  <div class="psect">НАИБОЛЕЕ ЗАГРУЖЕННЫЕ СТЕРЖНИ</div>
  <table class="calcTab"><tr><th>стержень</th><th>сечение</th><th>N сж, кН</th><th>M, кН·м</th><th>UR</th><th>f, мм</th></tr>
@@ -1129,12 +1309,28 @@ function openReportModal(){
  <div class="psect">ОПОРНЫЕ РЕАКЦИИ, кН</div>
  <table class="calcTab"><tr><th>опора</th><th>R</th><th>X</th><th>Y</th><th>Z</th></tr>
  ${R.reactArr.map(r=>`<tr><td>${esc(r.name)}</td><td><b>${r.F.toFixed(1)}</b></td><td>${r.fx.toFixed(1)}</td><td>${r.fy.toFixed(1)}</td><td>${r.fz.toFixed(1)}</td></tr>`).join('')}</table>
- <div class="hint2">В HTML-отчёт войдут: 5 видовых схем (включая деформированную), схемы балок с прогибами и N, схемы раскроя по штабам мерного проката (с группировкой одинаковых деталей), схемы стыковки узлов и план поэтапной сборки с проверками (коллизии, углы, «висит в воздухе»), смета, реакции, состав сечений, методика, <b>отказ от ответственности</b>. Автор: DENstis • <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a>.</div>`,
+ <div class="hint2">В HTML-отчёт войдут: 5 видовых схем (включая деформированную), схемы балок с прогибами и N, схемы раскроя по штабам мерного проката (с группировкой одинаковых деталей), схемы стыковки узлов и план поэтапной сборки с проверками (коллизии, углы, «висит в воздухе»), смета, реакции, состав сечений, методика, <b>отказ от ответственности</b>. Автор: DENstis • <a href="mailto:Denstis@gmail.com">Denstis@gmail.com</a>.</div>
+ <div class="hint2">Кнопками ниже скачивается <b>модель со всеми запилами</b> (miter по биссектрисе, T-подрезы, вложения): OBJ — для CAD/BIM, STL — для 3D-просмотра/печати; единицы мм, Z вверх.</div>`,
  [{label:'Скачать HTML-отчёт',keep:true,fn:()=>{const html=(typeof buildReportHTML==='function')?buildReportHTML(shots):null;
    if(!html){toast('Модуль отчёта не загружен (31-report.js)',{type:'err'});return}
    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='roof-report.html';a.click();toast('Отчёт сохранён — со схемами, раскроем и сметой',{type:'ok',timeout:5000})}},
-  {label:'Закрыть',fn:closeModal}]);$('#modalCard').classList.add('wide')}
+  {label:'Скачать OBJ (запилы)',keep:true,fn:()=>{
+   if(!modelParts){toast('Модуль экспорта не загружен (32-meshexport.js)',{type:'err'});return}
+   exportCutModel('OBJ',modelParts)}},
+  {label:'Скачать STL (запилы)',keep:true,fn:()=>{
+   if(!modelParts){toast('Модуль экспорта не загружен (32-meshexport.js)',{type:'err'});return}
+   exportCutModel('STL',modelParts)}},
+  {label:'Закрыть',fn:closeModal}]);$('#modalCard').classList.add('wide');
+ /* галочка авто-решения: включение сразу применяет исправления (диалог — при
+    необходимости), затем модалка обновляется со свежими проверками */
+ const ck=$('#ckAutoFix');
+ if(ck)ck.onchange=e=>{
+  localStorage.setItem('fc.autofix',e.target.checked?'1':'');
+  if(!e.target.checked)return;
+  if(!assemblyPlan().issues.some(i=>i.sev==='err')){toast('Ошибок конструкции нет — исправлять нечего',{type:'ok'});return}
+  const dlg=autoFixFlow(()=>openReportModal(true));
+  if(!dlg)openReportModal(true)}}
 /* boot wiring */
 window.addEventListener('load',()=>{
  ['#tabModel','#tabLoads','#tabCut','#tabReport'].forEach((id,i)=>{const b=$(id);if(b)b.onclick=()=>setAppMode(['model','loads','cut','report'][i])});

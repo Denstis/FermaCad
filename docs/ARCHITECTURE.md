@@ -1,6 +1,6 @@
 # Архитектура ФЕРМА·CAD
 
-SPA без сборки: `index.html` подключает 32 классических `<script>`‑модуля
+SPA без сборки: `index.html` подключает 33 классических `<script>`‑модуля
 (порядок = зависимости, общие глобальные переменные). three.js r128 с CDN.
 Версия сборки — число в `?v=NN` у каждого скрипта + чип версии в UI.
 
@@ -36,10 +36,17 @@ SPA без сборки: `index.html` подключает 32 классичес
 | 25-keys | хоткеи: handleEscape, MOD_ACTIONS, TOOL_KEYS, F1–F5 |
 | 26-app | главный цикл rAF, режимные переключатели, инициализация |
 | 27-data | каталог NR_SECTIONS (ГОСТ‑трубы: масса, Ix/Iy/Wx/Wy, sell_len_m, цена), материалы |
-| 28-calc | ядро: solveFrame (FEM 12DOF), нагрузки СП 20, UR СП 16, прогибы, тепловые карты, defl‑UI, раскрой (cutCore/cutPlan/cutGroups), nodeJoints, assemblyPlan + проверки, autoSections, панель расчёта |
+| 28-calc | ядро: solveFrame (FEM 12DOF), нагрузки СП 20, UR СП 16, прогибы, тепловые карты, defl‑UI, раскрой (cutCore/cutPlan/cutGroups, мульти‑плоскостные запилы cutCore→planes[]), nodeJoints, assemblyPlan + проверки, авто‑решение ошибок (autoFixConstruction/autoFixFlow, галочка в отчёте), autoSections, панель расчёта |
 | 29-fullmodel | полная модель из профилей: secContours, endInfo (классификация стыков + вложение), призмы, сварные контуры |
 | 30-xnodes | инструмент «узлы на пересечениях стержней» (segClosest, shared hosts) |
 | 31-report | HTML‑отчёт: снимки видов, SVG‑схемы, реакции, раскрой + чертежи запилов (svgCutPos), схемы узлов (svgJoint), план сборки (svgAsmPlan), смета; deflBodies (изогнутые тела) |
+| 32-meshexport | экспорт модели со всеми запилами: cutModelParts/capTs (одна геометрия с 3D: miter/T‑подрез/вложение), buildCutOBJ/buildCutSTL, exportCutModel (кнопки в модалке отчёта) |
+
+Примечания (v55–v62): авто‑решение ошибок `autoFixConstruction` сажает узлы на
+пересечения осей/концы стержней в пределах `HOST_TOL`, нерешаемое показывает
+диалог `autoFixFlow` («Продолжить с ошибками» / «Отменить исправления» → undo);
+запил считается по нескольким плоскостям (`cutCore` → `planes[]`, `capTs`
+max/min по концам), опорные концы остаются `flat` (`supportCut`/`clearOf`).
 
 ## Потоки данных
 

@@ -6,7 +6,7 @@
 <title>ФЕРМА·CAD — редактор стержневых конструкций</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js?v=54"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js?v=62"></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -27,7 +27,7 @@
   <button class="tbtn" id="btnExport" data-ic="export" data-tip="Экспорт: JSON / DXF / OBJ"><span>Экспорт ▾</span></button>
   <button class="tbtn" id="btnHelp" data-ic="help" data-tip="Справка (F1)"><span>Справка</span></button>
   <button class="tbtn" id="btnSide" data-ic="menu" data-tip="Скрыть/показать правую панель"><span>Панель</span></button>
-  <span class="verchip" id="verChip" title="Версия сборки v54 • автор DENstis (Denstis@gmail.com) • Ctrl+F5">v54</span>
+  <span class="verchip" id="verChip" title="Версия сборки v62 • автор DENstis (Denstis@gmail.com) • Ctrl+F5">v62</span>
  </header>
  <div id="main">
   <nav id="toolbar"></nav>
@@ -110,37 +110,38 @@
 <input type="file" id="fileInput" accept=".json,application/json" hidden>
 <div id="bootErr"><div class="card"><h4 style="color:var(--danger)">НЕ УДАЛОСЬ ЗАПУСТИТЬ РЕДАКТОР</h4><p style="color:var(--muted);font-size:12px;line-height:1.6" id="bootErrMsg">Библиотека Three.js не загрузилась. Проверьте подключение к интернету (CDN) и обновите страницу.</p></div></div>
 <!-- ФЕРМА·CAD modules (split from the original single-file build) -->
-<script src="js/00-util.js?v=54"></script>
-<script src="js/01-icons.js?v=54"></script>
-<script src="js/02-types.js?v=54"></script>
-<script src="js/03-state.js?v=54"></script>
-<script src="js/04-scene3d.js?v=54"></script>
-<script src="js/05-model.js?v=54"></script>
-<script src="js/06-history.js?v=54"></script>
-<script src="js/07-scenebuild.js?v=54"></script>
-<script src="js/08-grid.js?v=54"></script>
-<script src="js/09-camera.js?v=54"></script>
-<script src="js/10-picking.js?v=54"></script>
-<script src="js/11-ghost.js?v=54"></script>
-<script src="js/12-tools.js?v=54"></script>
-<script src="js/13-pointer.js?v=54"></script>
-<script src="js/14-plan.js?v=54"></script>
-<script src="js/15-ctxmenu.js?v=54"></script>
-<script src="js/16-modals.js?v=54"></script>
-<script src="js/17-storage.js?v=54"></script>
-<script src="js/18-demo.js?v=54"></script>
-<script src="js/27-data.js?v=54"></script>
-<script src="js/28-calc.js?v=54"></script>
-<script src="js/19-tree.js?v=54"></script>
-<script src="js/20-props.js?v=54"></script>
-<script src="js/21-coach.js?v=54"></script>
-<script src="js/22-params.js?v=54"></script>
-<script src="js/23-toolbar.js?v=54"></script>
-<script src="js/24-cube.js?v=54"></script>
-<script src="js/25-keys.js?v=54"></script>
-<script src="js/26-app.js?v=54"></script>
-<script src="js/29-fullmodel.js?v=54"></script>
-<script src="js/30-xnodes.js?v=54"></script>
-<script src="js/31-report.js?v=54"></script>
+<script src="js/00-util.js?v=62"></script>
+<script src="js/01-icons.js?v=62"></script>
+<script src="js/02-types.js?v=62"></script>
+<script src="js/03-state.js?v=62"></script>
+<script src="js/04-scene3d.js?v=62"></script>
+<script src="js/05-model.js?v=62"></script>
+<script src="js/06-history.js?v=62"></script>
+<script src="js/07-scenebuild.js?v=62"></script>
+<script src="js/08-grid.js?v=62"></script>
+<script src="js/09-camera.js?v=62"></script>
+<script src="js/10-picking.js?v=62"></script>
+<script src="js/11-ghost.js?v=62"></script>
+<script src="js/12-tools.js?v=62"></script>
+<script src="js/13-pointer.js?v=62"></script>
+<script src="js/14-plan.js?v=62"></script>
+<script src="js/15-ctxmenu.js?v=62"></script>
+<script src="js/16-modals.js?v=62"></script>
+<script src="js/17-storage.js?v=62"></script>
+<script src="js/18-demo.js?v=62"></script>
+<script src="js/27-data.js?v=62"></script>
+<script src="js/28-calc.js?v=62"></script>
+<script src="js/19-tree.js?v=62"></script>
+<script src="js/20-props.js?v=62"></script>
+<script src="js/21-coach.js?v=62"></script>
+<script src="js/22-params.js?v=62"></script>
+<script src="js/23-toolbar.js?v=62"></script>
+<script src="js/24-cube.js?v=62"></script>
+<script src="js/25-keys.js?v=62"></script>
+<script src="js/26-app.js?v=62"></script>
+<script src="js/29-fullmodel.js?v=62"></script>
+<script src="js/30-xnodes.js?v=62"></script>
+<script src="js/31-report.js?v=62"></script>
+<script src="js/32-meshexport.js?v=62"></script>
 </body>
 </html>

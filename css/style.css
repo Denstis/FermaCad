@@ -272,6 +272,8 @@ body.dragging #vp canvas{cursor:grabbing}
 #paneCalc .crow b{color:var(--acc);font-family:var(--mono)}
 #paneCalc .ck{display:flex;gap:7px;align-items:center;font-size:11px;margin:6px 0;cursor:pointer}
 #paneCalc .ck input{width:auto;accent-color:var(--acc)}
+#modalCard .ck{display:flex;gap:7px;align-items:center;font-size:11.5px;margin:8px 0;cursor:pointer}
+#modalCard .ck input{width:auto;accent-color:var(--acc)}
 #paneCalc input[type=range]{width:100%;accent-color:var(--acc);padding:0;border:none;background:none}
 #paneCalc .hint2{color:var(--muted);font-size:10px;line-height:1.55;margin:6px 0}
 .calcTab{width:100%;border-collapse:collapse;font-size:10px;margin-top:6px}
